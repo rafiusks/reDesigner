@@ -32,7 +32,7 @@ describe('computeContentHash', () => {
       fc.property(
         fc.dictionary(fc.string({ minLength: 1 }), fc.record({
           filePath: fc.string({ minLength: 1 }),
-          exportKind: fc.constantFrom('default', 'named'),
+          exportKind: fc.constantFrom<'default' | 'named'>('default', 'named'),
           lineRange: fc.tuple(fc.nat(), fc.nat()),
           displayName: fc.string({ minLength: 1 }),
         }), { minKeys: 1, maxKeys: 5 }),
