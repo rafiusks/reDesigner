@@ -17,5 +17,8 @@
     "indentWidth": 2,
     "lineWidth": 100
   },
-  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" } }
+  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" } },
+  "files": {
+    "ignore": ["**/test/fixtures/**/output.tsx", "**/test/fixtures/**/expected-manifest.json"]
+  }
 }

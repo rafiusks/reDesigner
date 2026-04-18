@@ -1,0 +1,21 @@
+{
+  "filePath": "src/input.tsx",
+  "components": {
+    "src/input.tsx::Button": {
+      "filePath": "src/input.tsx",
+      "exportKind": "named",
+      "lineRange": [
+        1,
+        3
+      ],
+      "displayName": "Button"
+    }
+  },
+  "locs": {
+    "src/input.tsx:2:9": {
+      "componentKey": "src/input.tsx::Button",
+      "filePath": "src/input.tsx",
+      "componentName": "Button"
+    }
+  }
+}

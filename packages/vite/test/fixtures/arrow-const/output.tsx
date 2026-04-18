@@ -1,0 +1,1 @@
+export const Button = () => <div data-redesigner-loc="src/input.tsx:1:28" />;
