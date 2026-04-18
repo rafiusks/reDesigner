@@ -25,7 +25,7 @@ async function runFixture(name: string): Promise<{ code: string; batch: PerFileB
   const ast = parser.parse(input, { sourceType: 'module', plugins: ['jsx', 'typescript'] })
   const batch: PerFileBatch = { filePath: 'src/input.tsx', components: {}, locs: {} }
   const plugin = redesignerBabelPlugin({ relPath: 'src/input.tsx', batch })
-  traverse(ast, plugin.visitor)
+  traverse(ast, plugin.visitor as unknown as Parameters<typeof traverse>[1])
   const { code } = generate(ast, { retainLines: true })
   return { code, batch }
 }
