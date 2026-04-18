@@ -1,0 +1,25 @@
+import path from 'node:path'
+
+export function toPosixProjectRoot(raw: string): string {
+  if (!raw) throw new Error('[redesigner] projectRoot must be non-empty')
+  return raw.replace(/\\/g, '/')
+}
+
+export function toPosixRelative(absFile: string, projectRoot: string): string {
+  const rel = path.posix.relative(toPosixProjectRoot(projectRoot), toPosixProjectRoot(absFile))
+  if (rel.includes('\\')) {
+    throw new Error(`[redesigner] path normalization produced backslash (plugin bug): ${rel}`)
+  }
+  return rel
+}
+
+export function rejectEscapingPath(relOrAbs: string, projectRoot: string): void {
+  if (path.isAbsolute(relOrAbs)) {
+    throw new Error(`[redesigner] path must be relative to projectRoot, got absolute: ${relOrAbs}`)
+  }
+  const resolved = path.posix.resolve(toPosixProjectRoot(projectRoot), relOrAbs)
+  const rootPosix = toPosixProjectRoot(projectRoot)
+  if (!resolved.startsWith(`${rootPosix}/`) && resolved !== rootPosix) {
+    throw new Error(`[redesigner] path escapes projectRoot: ${relOrAbs}`)
+  }
+}
