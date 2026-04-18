@@ -7,3 +7,6 @@ pnpm-debug.log
 
 # Local session state for Claude Code tooling
 .remember/
+
+.husky/_
+*.tsbuildinfo
