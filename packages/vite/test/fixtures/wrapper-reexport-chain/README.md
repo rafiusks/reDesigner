@@ -1,0 +1,2 @@
+<!-- human -->
+DOCUMENTS STRONGER-THAN-SPECIFIED BEHAVIOR: `Suspense` is imported from a user re-export (`./my-shim`). The spec anticipated that the plugin's name-based wrapper check would NOT fire (predicting a false negative where Suspense gets tagged). In practice, the check IS name-based — it matches the JSX element tag `<Suspense>` by string regardless of import source — so this Suspense is correctly skipped. Only `<span />` gets tagged. This is better than the spec predicted: no false negative occurs here.

@@ -101,8 +101,12 @@ export function resolveEnclosingComponent(
     if (t.isExportDefaultDeclaration(node)) {
       const decl = node.declaration
       if (t.isArrowFunctionExpression(decl) || t.isFunctionExpression(decl)) {
+        const ownName =
+          t.isFunctionExpression(decl) && decl.id && isComponentIdentifier(decl.id.name)
+            ? decl.id.name
+            : null
         return {
-          componentName: pascalFromFile(relPath),
+          componentName: ownName ?? pascalFromFile(relPath),
           exportKind: 'default',
           lineRange: [node.loc?.start.line ?? 0, node.loc?.end.line ?? 0],
         }
@@ -110,8 +114,14 @@ export function resolveEnclosingComponent(
       if (t.isCallExpression(decl)) {
         const unwrapped = unwrap(decl)
         if (t.isArrowFunctionExpression(unwrapped) || t.isFunctionExpression(unwrapped)) {
+          const ownName =
+            t.isFunctionExpression(unwrapped) &&
+            unwrapped.id &&
+            isComponentIdentifier(unwrapped.id.name)
+              ? unwrapped.id.name
+              : null
           return {
-            componentName: pascalFromFile(relPath),
+            componentName: ownName ?? pascalFromFile(relPath),
             exportKind: 'default',
             lineRange: [node.loc?.start.line ?? 0, node.loc?.end.line ?? 0],
           }
