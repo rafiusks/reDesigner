@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.redesigner/
+pnpm-debug.log
+.DS_Store
+
+# Local session state for Claude Code tooling
+.remember/
