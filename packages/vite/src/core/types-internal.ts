@@ -6,17 +6,11 @@ export interface PerFileBatch {
   locs: Record<string, LocRecord>
 }
 
-export interface WriterState {
-  byFile: Map<string, PerFileBatch>
-}
-
-export interface WriterInternals {
-  /** Promise resolving once the given flush sequence has landed on disk. */
-  onFlush(seq: number): Promise<void>
-  /** Forces a flush and resolves after it lands. Decoupled from debounce timing. */
-  quiesce(): Promise<void>
-  /** Forces a flush ignoring debounce; test-only seam. */
-  forceFlush(): Promise<void>
+export interface Logger {
+  info(m: string): void
+  warn(m: string): void
+  error(m: string): void
+  debug?(m: string): void
 }
 
 export interface Clock {

@@ -1,10 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import {
   closeSync,
-  existsSync,
   mkdirSync,
   openSync,
-  readFileSync,
   readdirSync,
   renameSync,
   unlinkSync,
@@ -12,7 +10,7 @@ import {
 } from 'node:fs'
 import path from 'node:path'
 import { computeContentHash } from '../core/contentHash'
-import type { PerFileBatch } from '../core/types-internal'
+import type { Clock, Logger, PerFileBatch } from '../core/types-internal'
 import type { Manifest } from '../core/types-public'
 
 const DEBOUNCE_MS = 200
@@ -23,17 +21,8 @@ export interface ManifestWriterOptions {
   projectRoot: string
   manifestPath: string
   framework?: string
-  clock?: {
-    setTimeout: (fn: () => void, ms: number) => unknown
-    clearTimeout: (h: unknown) => void
-    now: () => number
-  }
-  logger?: {
-    info: (m: string) => void
-    warn: (m: string) => void
-    error: (m: string) => void
-    debug?: (m: string) => void
-  }
+  clock?: Clock
+  logger?: Logger
 }
 
 export class ManifestWriter {
@@ -43,12 +32,11 @@ export class ManifestWriter {
   private firstPendingAt: number | null = null
   private flushInFlight: Promise<void> | null = null
   private seq = 0
-  private lastFlushedIdentity: object | null = null
   private onFlushResolvers: Array<{ seq: number; resolve: () => void }> = []
   private lockFd: number | null = null
   private shutdownCalled = false
-  private clock: NonNullable<ManifestWriterOptions['clock']>
-  private logger: NonNullable<ManifestWriterOptions['logger']>
+  private clock: Clock
+  private logger: Logger
 
   constructor(private opts: ManifestWriterOptions) {
     this.clock = opts.clock ?? {
@@ -66,7 +54,7 @@ export class ManifestWriter {
     const dir = path.dirname(opts.manifestPath)
     mkdirSync(dir, { recursive: true })
 
-    // Acquire exclusive-flag .owner-lock
+    // wx flag detects a second dev server on the same manifestPath (collision → throw, not overwrite).
     const lockPath = `${opts.manifestPath}.owner-lock`
     try {
       this.lockFd = openSync(lockPath, 'wx')
@@ -76,10 +64,7 @@ export class ManifestWriter {
       )
     }
 
-    // Startup tmp sweep
     this.startupSweep(dir)
-
-    // Write empty manifest immediately
     this.writeSync(this.buildManifest())
   }
 
@@ -115,7 +100,6 @@ export class ManifestWriter {
   }
 
   commitFile(filePath: string, batch: PerFileBatch): void {
-    // CAS per-file replace: identity swap by creating a new Map entry reference
     this.state.set(filePath, batch)
     this.scheduleFlush()
   }
@@ -141,16 +125,16 @@ export class ManifestWriter {
     this.firstPendingAt = null
 
     if (this.flushInFlight) return this.flushInFlight
-    const snapshotState = this.state
+    // this.state is a stable Map reference — snapshot its entries so we can detect per-file
+    // replacements that arrived while the flush was in flight.
+    const snapshotEntries = new Map(this.state)
     const manifest = this.buildManifest()
     const seq = ++this.seq
 
     this.flushInFlight = (async () => {
       try {
         await this.flush(manifest)
-        this.lastFlushedIdentity = snapshotState
-        // Post-flush re-check
-        if (this.state !== snapshotState || this.snapshotChanged(snapshotState)) {
+        if (this.snapshotChanged(snapshotEntries)) {
           this.scheduleFlush()
         }
       } finally {
@@ -167,7 +151,7 @@ export class ManifestWriter {
   }
 
   private snapshotChanged(snapshot: Map<string, PerFileBatch>): boolean {
-    // Identity-based: compare Map reference of each file's batch
+    // Per-entry reference compare — commitFile replaces batch objects, so identity suffices.
     if (snapshot.size !== this.state.size) return true
     for (const [k, v] of this.state) if (snapshot.get(k) !== v) return true
     return false

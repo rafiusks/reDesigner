@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
+import type { Logger } from '../core/types-internal'
 
 export interface DaemonHandle {
   pid: number
@@ -16,8 +17,13 @@ export interface DaemonBridgeOptions {
   importer: () => Promise<{
     startDaemon: (opts: { manifestPath: string; port: number }) => Promise<DaemonHandle>
   }>
-  logger: { info(m: string): void; warn(m: string): void; error(m: string): void }
+  logger: Logger
   /** Injectable spawn (for taskkill test seams). */
+  spawn?: typeof nodeSpawn
+}
+
+export interface DaemonShutdownOptions {
+  logger: Logger
   spawn?: typeof nodeSpawn
 }
 
@@ -50,7 +56,6 @@ export class DaemonBridge {
       return
     }
 
-    // Validate contract
     const handle = await mod.startDaemon({ manifestPath: opts.manifestPath, port: opts.port })
     const handleRecord = handle as unknown as Record<string, unknown>
     for (const key of REQUIRED_HANDLE_KEYS) {
@@ -60,7 +65,6 @@ export class DaemonBridge {
       }
     }
 
-    // Pipe drain
     handle.stdout.on('data', (buf: Buffer) =>
       opts.logger.info(`[daemon] ${buf.toString().trimEnd()}`),
     )
@@ -69,8 +73,8 @@ export class DaemonBridge {
     )
     this.handle = handle
 
-    // Teardown signals
     const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM']
+    // SIGHUP is POSIX-only — registering on Windows deadlocks the process (nodejs/node#10165).
     if (process.platform !== 'win32') signals.push('SIGHUP')
     for (const sig of signals) {
       const fn = () => {
@@ -81,7 +85,7 @@ export class DaemonBridge {
     }
   }
 
-  async shutdown(opts: DaemonBridgeOptions): Promise<void> {
+  async shutdown(opts: DaemonShutdownOptions): Promise<void> {
     if (this.shutdownCalled) return
     this.shutdownCalled = true
     for (const { signal, fn } of this.signalHandlers) process.off(signal, fn)
@@ -96,7 +100,7 @@ export class DaemonBridge {
     this.handle = null
   }
 
-  private async shutdownPosix(h: DaemonHandle, opts: DaemonBridgeOptions): Promise<void> {
+  private async shutdownPosix(h: DaemonHandle, opts: DaemonShutdownOptions): Promise<void> {
     try {
       process.kill(h.pid, 'SIGTERM')
     } catch {}
@@ -115,21 +119,37 @@ export class DaemonBridge {
     }
   }
 
-  private async shutdownWindows(h: DaemonHandle, opts: DaemonBridgeOptions): Promise<void> {
+  private async shutdownWindows(h: DaemonHandle, opts: DaemonShutdownOptions): Promise<void> {
     const spawn = opts.spawn ?? nodeSpawn
     let acked = false
     const ackPromise = new Promise<void>((resolve) => {
-      const onData = (buf: Buffer) => {
-        if (buf.toString().includes('"ack":true')) {
-          acked = true
-          resolve()
-        }
-      }
-      h.stdout.on('data', onData)
-      setTimeout(() => {
+      let buf = ''
+      const timer = setTimeout(() => {
         h.stdout.off('data', onData)
         resolve()
       }, 1500)
+      const onData = (chunk: Buffer) => {
+        buf += chunk.toString()
+        let idx = buf.indexOf('\n')
+        while (idx >= 0) {
+          const line = buf.slice(0, idx).trim()
+          buf = buf.slice(idx + 1)
+          if (line) {
+            try {
+              const msg = JSON.parse(line) as { ack?: unknown }
+              if (msg.ack === true) {
+                acked = true
+                clearTimeout(timer)
+                h.stdout.off('data', onData)
+                resolve()
+                return
+              }
+            } catch {}
+          }
+          idx = buf.indexOf('\n')
+        }
+      }
+      h.stdout.on('data', onData)
     })
     try {
       h.stdin.write('{"op":"shutdown"}\n')

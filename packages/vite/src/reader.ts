@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
-import { computeContentHash as _compute } from './core/contentHash'
 import type { Manifest } from './core/types-public'
+
+export { computeContentHash } from './core/contentHash'
 
 export const SUPPORTED_MAJOR = 1
 
@@ -45,8 +46,4 @@ export async function readManifest(
     }
   }
   throw lastErr
-}
-
-export function computeContentHash(manifest: Manifest): string {
-  return _compute(manifest)
 }

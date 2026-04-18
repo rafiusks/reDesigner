@@ -4,7 +4,7 @@ import { transformAsync } from '@babel/core'
 import type { Plugin, ResolvedConfig } from 'vite'
 import { redesignerBabelPlugin } from './babel/plugin'
 import { rejectEscapingPath, toPosixProjectRoot, toPosixRelative } from './core/pathGuards'
-import type { PerFileBatch } from './core/types-internal'
+import type { Logger, PerFileBatch } from './core/types-internal'
 import type { RedesignerOptions } from './core/types-public'
 import { DaemonBridge } from './integration/daemonBridge'
 import { ManifestWriter } from './integration/manifestWriter'
@@ -38,15 +38,22 @@ function loadTsconfig(root: string): unknown {
   }
 }
 
+function makeLogger(viteLogger: ResolvedConfig['logger']): Logger {
+  return {
+    info: (m) => viteLogger.info(m),
+    warn: (m) => viteLogger.warn(m),
+    error: (m) => viteLogger.error(m),
+    debug: (m) => viteLogger.info(m),
+  }
+}
+
 export default function redesigner(options: RedesignerOptions = {}): Plugin {
-  const state: Map<unknown, ClientState> = new Map()
+  let client: ClientState | null = null
   let config: ResolvedConfig
-  let initialized = false
   const include = options.include ?? ['**/*.{jsx,tsx}']
   const exclude = options.exclude ?? ['node_modules/**', '**/*.d.ts']
   const daemonOpts = normalizeDaemon(options.daemon)
 
-  // pluginRef used inside configureServer to call closeBundle without 'this'
   const pluginRef: Plugin = {
     name: 'redesigner',
     enforce: 'pre',
@@ -86,45 +93,25 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         )
       }
 
-      const writerLogger: {
-        info: (m: string) => void
-        warn: (m: string) => void
-        error: (m: string) => void
-        debug?: (m: string) => void
-      } = {
-        info: (m) => logger.info(m),
-        warn: (m) => logger.warn(m),
-        error: (m) => logger.error(m),
-        debug: (m) => logger.info(m),
-      }
-
-      const writer = new ManifestWriter({ projectRoot, manifestPath, logger: writerLogger })
+      const writer = new ManifestWriter({
+        projectRoot,
+        manifestPath,
+        logger: makeLogger(logger),
+      })
       const daemon = new DaemonBridge()
-      state.set('client', { writer, daemon, projectRoot, manifestPath, include, exclude })
-      initialized = true
+      client = { writer, daemon, projectRoot, manifestPath, include, exclude }
     },
 
     async configureServer(server) {
-      const cs = state.get('client')
-      if (!cs) return
+      if (!client) return
 
-      const daemonLogger: {
-        info(m: string): void
-        warn(m: string): void
-        error(m: string): void
-      } = {
-        info: (m) => config.logger.info(m),
-        warn: (m) => config.logger.warn(m),
-        error: (m) => config.logger.error(m),
-      }
-
-      await cs.daemon.start({
+      await client.daemon.start({
         mode: daemonOpts.mode,
         port: daemonOpts.port,
-        manifestPath: cs.manifestPath,
+        manifestPath: client.manifestPath,
         // biome-ignore lint/suspicious/noExplicitAny: dynamic import path; TS static analyser requires string literal
         importer: () => import('@redesigner/daemon' as any),
-        logger: daemonLogger,
+        logger: makeLogger(config.logger),
       })
 
       server.httpServer?.on('close', () => {
@@ -135,18 +122,14 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
     },
 
     async transform(code, id, transformOpts) {
-      if (!initialized) return undefined
-      // Environment-aware skip (Vite 6+: this.environment is typed via MinimalPluginContext)
+      if (!client) return undefined
       if (this.environment && this.environment.name !== 'client') return undefined
       if ((transformOpts as { ssr?: boolean } | undefined)?.ssr === true) return undefined
       if (!/\.(jsx|tsx)$/.test(id)) return undefined
 
-      const cs = state.get('client')
-      if (!cs) return undefined
-
       let relPath: string
       try {
-        relPath = toPosixRelative(id, cs.projectRoot)
+        relPath = toPosixRelative(id, client.projectRoot)
       } catch (err) {
         config.logger.warn(
           `[redesigner] path normalization failed for ${id}: ${(err as Error).message}`,
@@ -175,32 +158,15 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
       }
 
       if (!result) return undefined
-      cs.writer.commitFile(relPath, batch)
+      client.writer.commitFile(relPath, batch)
       return { code: result.code ?? code, map: result.map ?? null }
     },
 
     async closeBundle() {
-      const cs = state.get('client')
-      if (!cs) return
-
-      const daemonLogger: {
-        info(m: string): void
-        warn(m: string): void
-        error(m: string): void
-      } = {
-        info: (m) => config.logger.info(m),
-        warn: (m) => config.logger.warn(m),
-        error: (m) => config.logger.error(m),
-      }
-
-      await cs.writer.shutdown()
-      await cs.daemon.shutdown({
-        mode: daemonOpts.mode,
-        port: daemonOpts.port,
-        manifestPath: cs.manifestPath,
-        importer: () => Promise.reject(new Error('closed')),
-        logger: daemonLogger,
-      })
+      if (!client) return
+      const logger = makeLogger(config.logger)
+      await client.writer.shutdown()
+      await client.daemon.shutdown({ logger })
     },
   }
 

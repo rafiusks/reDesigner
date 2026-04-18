@@ -1,9 +1,2 @@
-// Re-export types for the generator. ts-json-schema-generator reads this as its root.
-export type {
-  Manifest,
-  ComponentRecord,
-  LocRecord,
-  DaemonOptions,
-  RedesignerOptions,
-  SchemaVersion,
-} from './types-public'
+// Root entry for ts-json-schema-generator — only types that belong in the manifest schema.
+export type { ComponentRecord, LocRecord, Manifest, SchemaVersion } from './types-public'

@@ -44,15 +44,14 @@ export function redesignerBabelPlugin(opts: RedesignerBabelPluginOpts): PluginOb
       JSXOpeningElement(path: NodePath<t.JSXOpeningElement>) {
         try {
           const name = openingElementName(path.node)
-          if (isReactWrapperName(name)) return // skip wrapper components
+          if (isReactWrapperName(name)) return
 
           const loc = path.node.loc
           if (!loc) return
           const comp = resolveEnclosingComponent(path, relPath)
 
           if (comp.componentName === '(module)') {
-            // Special rule: module-scope JSX is attributed to synthetic (module) in the MANIFEST,
-            // but we do NOT inject `data-redesigner-loc` on the opening element (validation gate §1.4.5).
+            // Module-scope JSX gets a synthetic (module) entry but no DOM attribute (validation gate §1.4.5).
             const componentKey = `${relPath}::(module)`
             batch.components[componentKey] = {
               filePath: relPath,
@@ -63,11 +62,6 @@ export function redesignerBabelPlugin(opts: RedesignerBabelPluginOpts): PluginOb
             const locString = formatLoc(relPath, loc.start.line, loc.start.column)
             batch.locs[locString] = { componentKey, filePath: relPath, componentName: '(module)' }
             return
-          }
-
-          // Reject user-declared displayName === "(module)"
-          if (comp.componentName === '(module)') {
-            throw new Error(`[redesigner] "(module)" is a reserved synthetic component name`)
           }
 
           const componentKey = `${relPath}::${comp.componentName}`
@@ -84,7 +78,6 @@ export function redesignerBabelPlugin(opts: RedesignerBabelPluginOpts): PluginOb
             componentName: comp.componentName,
           }
 
-          // Inject attribute
           const attr = t.jsxAttribute(t.jsxIdentifier(ATTR_NAME), t.stringLiteral(locString))
           path.node.attributes.push(attr)
         } catch (err) {

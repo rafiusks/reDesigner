@@ -46,13 +46,10 @@ export function resolveEnclosingComponent(
   path: NodePath<t.JSXOpeningElement | t.JSXFragment | t.JSXElement>,
   relPath: string,
 ): EnclosingComponent {
-  // Walk up looking for: class component, function declaration (capitalized),
-  // variable declarator (capitalized) assigned to a (possibly wrapped) function/arrow.
   let cur: NodePath | null = path.parentPath
   while (cur) {
     const node = cur.node
 
-    // ClassDeclaration
     if (t.isClassDeclaration(node) && node.id && isComponentIdentifier(node.id.name)) {
       const exportKind: 'default' | 'named' = t.isExportDefaultDeclaration(cur.parent)
         ? 'default'
@@ -64,7 +61,6 @@ export function resolveEnclosingComponent(
       }
     }
 
-    // FunctionDeclaration
     if (t.isFunctionDeclaration(node) && node.id && isComponentIdentifier(node.id.name)) {
       const exportKind: 'default' | 'named' = t.isExportDefaultDeclaration(cur.parent)
         ? 'default'
@@ -76,7 +72,6 @@ export function resolveEnclosingComponent(
       }
     }
 
-    // VariableDeclarator with arrow/function initializer (may be wrapped in memo/forwardRef)
     if (
       t.isVariableDeclarator(node) &&
       t.isIdentifier(node.id) &&
@@ -97,7 +92,6 @@ export function resolveEnclosingComponent(
       }
     }
 
-    // export default <expr> where expr is an anonymous arrow/function or memo(...)/forwardRef(...) of anonymous
     if (t.isExportDefaultDeclaration(node)) {
       const decl = node.declaration
       if (t.isArrowFunctionExpression(decl) || t.isFunctionExpression(decl)) {
@@ -132,7 +126,6 @@ export function resolveEnclosingComponent(
     cur = cur.parentPath
   }
 
-  // Module scope
   return {
     componentName: '(module)',
     exportKind: 'named',
