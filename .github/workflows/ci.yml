@@ -1,0 +1,98 @@
+name: ci
+on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+        node: ['20.11.0', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Windows Defender exclusion (hosted runner)
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+          Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\pnpm\store"
+          Add-MpPreference -ExclusionProcess "node.exe"
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 50 }
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ matrix.node }} }
+      - name: Corepack preflight
+        shell: bash
+        run: |
+          V=$(corepack --version || echo "0.0")
+          MAJOR=$(echo "$V" | cut -d. -f1)
+          MINOR=$(echo "$V" | cut -d. -f2)
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -lt 31 ]; then
+            echo "Corepack $V below 0.31.0 — upgrading"
+            npm install -g corepack@latest
+          fi
+          corepack enable pnpm
+          command -v pnpm
+          pnpm --version
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pnpm-cache
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ matrix.os }}-${{ matrix.node }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ matrix.os }}-${{ matrix.node }}-
+            pnpm-${{ matrix.os }}-
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm -r run lint
+      - run: pnpm -r run typecheck
+      - run: pnpm -r run test
+      - run: pnpm --filter @redesigner/vite run test:parallelism
+      - name: Fixture update guard (three-dot diff)
+        shell: bash
+        run: |
+          test -z "$REDESIGNER_FIXTURE_UPDATE" || (echo "REDESIGNER_FIXTURE_UPDATE set in CI" && exit 1)
+          base="${{ github.event.pull_request.base.sha || 'origin/main' }}"
+          changed=$(git diff --name-only "$base"...HEAD || true)
+          if echo "$changed" | grep -qE 'test/fixtures/.+/(output\.tsx|expected-manifest\.json)$'; then
+            echo "$changed" | grep -q 'test/fixtures/FIXTURE_CHANGELOG.md' || { echo "fixture changed without FIXTURE_CHANGELOG.md entry"; exit 1; }
+          fi
+      - name: No .only / .skip (belt + Biome rule)
+        shell: bash
+        run: |
+          ! git grep -En '\b(describe|it|test)\.(only|skip)\b' -- 'packages/*/test' || exit 1
+      - name: Per-directory non-empty assertion
+        shell: bash
+        run: |
+          for dir in packages/vite/test/unit packages/vite/test/fixtures packages/vite/test/integration; do
+            count=$(find "$dir" -name '*.test.ts' | wc -l)
+            if [ "$count" -lt 1 ]; then echo "$dir has no .test.ts files"; exit 1; fi
+          done
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-${{ matrix.os }}-${{ matrix.node }}
+          path: |
+            packages/vite/test/**/*.log
+            **/.redesigner/manifest.json*
+
+  all-green:
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify all matrix cells passed
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Matrix job did not succeed: ${{ needs.test.result }}"
+            exit 1
+          fi
