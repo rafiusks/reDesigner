@@ -7,10 +7,10 @@ export const WRAPPER_NAMES: readonly string[] = Object.freeze([
   'Suspense',
   'Profiler',
   'StrictMode',
-  'Activity',        // React 19.2
-  'ViewTransition',  // React 19.2
-  'Offscreen',       // legacy alias for Activity
-  'ErrorBoundary',   // userland heuristic
+  'Activity', // React 19.2
+  'ViewTransition', // React 19.2
+  'Offscreen', // legacy alias for Activity
+  'ErrorBoundary', // userland heuristic
 ])
 
 const WRAPPER_SET = new Set(WRAPPER_NAMES)

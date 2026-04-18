@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toPosixProjectRoot, toPosixRelative, rejectEscapingPath } from '../../src/core/pathGuards'
+import { rejectEscapingPath, toPosixProjectRoot, toPosixRelative } from '../../src/core/pathGuards'
 
 describe('toPosixProjectRoot', () => {
   it('normalizes Windows-native path with backslashes', () => {

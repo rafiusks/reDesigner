@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
-import { computeContentHash, canonicalize } from '../../src/core/contentHash'
+import { describe, expect, it } from 'vitest'
+import { canonicalize, computeContentHash } from '../../src/core/contentHash'
 
 const baseManifest = () => ({
   schemaVersion: '1.0' as const,
@@ -30,12 +30,16 @@ describe('computeContentHash', () => {
   it('property: key-order in components does not change hash', () => {
     fc.assert(
       fc.property(
-        fc.dictionary(fc.string({ minLength: 1 }), fc.record({
-          filePath: fc.string({ minLength: 1 }),
-          exportKind: fc.constantFrom<'default' | 'named'>('default', 'named'),
-          lineRange: fc.tuple(fc.nat(), fc.nat()),
-          displayName: fc.string({ minLength: 1 }),
-        }), { minKeys: 1, maxKeys: 5 }),
+        fc.dictionary(
+          fc.string({ minLength: 1 }),
+          fc.record({
+            filePath: fc.string({ minLength: 1 }),
+            exportKind: fc.constantFrom<'default' | 'named'>('default', 'named'),
+            lineRange: fc.tuple(fc.nat(), fc.nat()),
+            displayName: fc.string({ minLength: 1 }),
+          }),
+          { minKeys: 1, maxKeys: 5 },
+        ),
         (components) => {
           const entries = Object.entries(components)
           const shuffled = Object.fromEntries([...entries].reverse())

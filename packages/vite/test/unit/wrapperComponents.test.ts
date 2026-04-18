@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isReactWrapperName, WRAPPER_NAMES } from '../../src/core/wrapperComponents'
+import { WRAPPER_NAMES, isReactWrapperName } from '../../src/core/wrapperComponents'
 
 describe('isReactWrapperName', () => {
   it.each([

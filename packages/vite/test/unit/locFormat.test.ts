@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
+import { describe, expect, it } from 'vitest'
 import { formatLoc, parseLoc } from '../../src/core/locFormat'
 
 describe('formatLoc / parseLoc', () => {
@@ -25,7 +25,10 @@ describe('formatLoc / parseLoc', () => {
   it('property: parseLoc(formatLoc(p, l, c)) roundtrips', () => {
     fc.assert(
       fc.property(
-        fc.string({ minLength: 1 }).filter((s) => !/[\r\n\x00-\x1f]/.test(s) && !s.includes('\\') && !/^[A-Za-z]:/.test(s)),
+        fc
+          .string({ minLength: 1 })
+          // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — filter rejects control chars from fast-check generator
+          .filter((s) => !/[\r\n\x00-\x1f]/.test(s) && !s.includes('\\') && !/^[A-Za-z]:/.test(s)),
         fc.integer({ min: 1, max: 1_000_000 }),
         fc.integer({ min: 0, max: 10_000 }),
         (p, l, c) => {
