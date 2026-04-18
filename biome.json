@@ -19,6 +19,10 @@
   },
   "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" } },
   "files": {
-    "ignore": ["**/test/fixtures/**/output.tsx", "**/test/fixtures/**/expected-manifest.json"]
+    "ignore": [
+      "**/dist/**",
+      "**/test/fixtures/**/output.tsx",
+      "**/test/fixtures/**/expected-manifest.json"
+    ]
   }
 }
