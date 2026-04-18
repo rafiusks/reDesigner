@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Block fixture updates without a changelog entry
+changed=$(git diff --cached --name-only)
+if echo "$changed" | grep -qE 'test/fixtures/.+/(output\.tsx|expected-manifest\.json)$'; then
+  echo "$changed" | grep -q 'test/fixtures/FIXTURE_CHANGELOG.md' || {
+    echo "[husky] fixture output/expected-manifest changed without FIXTURE_CHANGELOG.md entry"
+    echo "        re-run with REDESIGNER_FIXTURE_UPDATE=1 and add an entry, then commit"
+    exit 1
+  }
+fi
+
+# Run Biome on staged files
+pnpm exec biome check --staged --no-errors-on-unmatched
