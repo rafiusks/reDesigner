@@ -169,19 +169,21 @@ describe('degradation: daemon required (package absent)', () => {
 
   it("daemon: 'required' with absent package — throws with daemon required message", async () => {
     // The script below is run as a native Node subprocess (no vite-node interception).
-    // It imports the built dist/index.js so the plugin's dynamic import resolves
-    // through native Node — producing ERR_MODULE_NOT_FOUND — not through vite-node.
-    const DIST_PLUGIN = path.resolve(PKG_ROOT, 'dist/index.js')
+    // We run it under `tsx` so we can import the plugin from src/ without requiring a
+    // pre-built dist/ — CI runs `pnpm -r test` without a preceding build step. The
+    // plugin's dynamic import of @redesigner/daemon still resolves through native
+    // Node module resolution (tsx only strips TS, doesn't intercept imports), so
+    // ERR_MODULE_NOT_FOUND surfaces as expected and the required-throw path fires.
+    const SRC_PLUGIN = path.resolve(PKG_ROOT, 'src/index.ts')
     const VITE_INDEX = path.resolve(PKG_ROOT, 'node_modules/vite/dist/node/index.js')
+    const TSX_BIN = path.resolve(PKG_ROOT, 'node_modules/.bin/tsx')
     const REACT_DEV_RUNTIME = path.join(REACT_DIR, 'jsx-dev-runtime.js')
     const REACT_JSX_RUNTIME = path.join(REACT_DIR, 'jsx-runtime.js')
     const REACT_INDEX = path.join(REACT_DIR, 'index.js')
 
-    // Use absolute imports for both vite and the plugin so the .mjs script can live
-    // anywhere without needing node_modules in its parent tree.
     const script = `
 import { createServer } from ${JSON.stringify(VITE_INDEX)};
-import { default as redesigner } from ${JSON.stringify(DIST_PLUGIN)};
+import { default as redesigner } from ${JSON.stringify(SRC_PLUGIN)};
 
 try {
   const server = await createServer({
@@ -217,7 +219,7 @@ try {
     let stdout = ''
     let stderr = ''
     try {
-      const result = await execFileAsync(process.execPath, [scriptPath], {
+      const result = await execFileAsync(TSX_BIN, [scriptPath], {
         timeout: 14000,
         env: { ...process.env, NODE_NO_WARNINGS: '1' },
       })
