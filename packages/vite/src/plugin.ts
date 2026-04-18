@@ -160,11 +160,12 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         result = await transformAsync(code, {
           plugins: [[() => redesignerBabelPlugin({ relPath, batch }), {}]],
           sourceMaps: true,
-          inputSourceMap: null,
+          inputSourceMap: undefined,
           configFile: false,
           babelrc: false,
           filename: id,
           ast: false,
+          parserOpts: { plugins: ['jsx', 'typescript'] },
         })
       } catch (err) {
         config.logger.warn(
