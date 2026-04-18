@@ -326,11 +326,14 @@ export default function App() {
     expect(observers.changedFiles.some((f) => f.endsWith('Alpha.tsx'))).toBe(true)
     expect(observers.changedFiles.some((f) => f.endsWith('Beta.tsx'))).toBe(true)
 
-    // Spec: updateCount >= 1 (Vite may batch; do NOT assert >= 2). The `.send` spy fires for
-    // every outbound ws message. Even with no connected client, Vite emits HMR updates.
-    // In middlewareMode with no client, send() may be a no-op routed path — so we treat the
-    // watcher signal as the primary evidence and ws.send as a corroborating soft bound.
-    expect(observers.updateCount).toBeGreaterThanOrEqual(0)
+    // Spec §8.3: updateCount >= 1 (Vite may batch; do NOT assert >= 2). The `.send` spy fires
+    // for every outbound ws broadcast. Per Vite 7's source (node/chunks/config.js ~25951–26134),
+    // `server.ws.send` is invoked for `type:'update'` payloads regardless of connected clients —
+    // the "skip when no clients" guard applies only to `type:'error'`. So the spy must observe
+    // at least one update when HMR dispatch fires. Asserting >= 0 would be vacuous and hide the
+    // class of regressions where a plugin breaks HMR dispatch entirely.
+    expect(observers.updateCount).toBeGreaterThanOrEqual(1)
+    // changeCount is not a spec requirement but makes diagnosing failures easier.
     expect(observers.changeCount).toBeGreaterThanOrEqual(1)
   }, 20000)
 
