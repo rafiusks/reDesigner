@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,6 +33,7 @@ const APP_CLIENT_SOURCE = `export default function AppClient() {
 describe('vite integration: SSR environment skip', () => {
   let dir: string
   let server: ViteDevServer
+  let hasEnvironmentsApi = false
 
   beforeAll(async () => {
     // realpathSync required on macOS: /var/folders → /private/var/folders symlink mismatch
@@ -47,7 +56,9 @@ describe('vite integration: SSR environment skip', () => {
     // Symlink packages/vite/node_modules into the tmpdir so Vite can resolve React
     // via normal Node externalization for ssrLoadModule (avoids CJS-in-ESM evaluator issue
     // that occurs when resolve.alias points directly at CJS files for SSR transforms).
-    symlinkSync(path.join(PKG_ROOT, 'node_modules'), path.join(dir, 'node_modules'))
+    // 'junction' is required on Windows to avoid EPERM without SeCreateSymbolicLink privilege;
+    // POSIX ignores the third argument.
+    symlinkSync(path.join(PKG_ROOT, 'node_modules'), path.join(dir, 'node_modules'), 'junction')
 
     server = await createServer({
       root: dir,
@@ -57,12 +68,21 @@ describe('vite integration: SSR environment skip', () => {
       server: { port: 0, strictPort: false, middlewareMode: true, fs: { strict: false } },
       clearScreen: false,
     })
+    hasEnvironmentsApi = Boolean(server.environments?.ssr)
   }, 15000)
 
   afterAll(async () => {
-    await server?.close()
-    if (dir) rmSync(dir, { recursive: true, force: true })
-  })
+    // ssrLoadModule spins up the SSR module runner which keeps a file watcher alive;
+    // server.close() can hang >10s on macOS waiting for it. Race the close against a
+    // 2s ceiling and continue regardless — vitest's worker will reap the rest on exit.
+    await Promise.race([server?.close(), new Promise<void>((r) => setTimeout(r, 2000))])
+    if (dir) {
+      try {
+        unlinkSync(path.join(dir, 'node_modules'))
+      } catch {}
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 10000)
 
   // Scenario 1: Vite 5 legacy { ssr: true } flag path.
   // plugin.ts line 127: `if ((transformOpts as { ssr?: boolean } | undefined)?.ssr === true) return undefined`
@@ -85,21 +105,18 @@ describe('vite integration: SSR environment skip', () => {
     expect(clientResult.code).toContain('data-redesigner-loc')
   }, 15000)
 
-  // Scenario 2: Vite 6+ environment-name path.
+  // Scenario 2: Vite 6+ environment-name path. Skipped on Vite 5 where environments API is absent.
   // plugin.ts line 126: `if (this.environment && this.environment.name !== 'client') return undefined`
   // Transforms run through server.environments.ssr have environment.name === 'ssr', so the
   // plugin returns undefined and no data-redesigner-loc is injected.
-  it('ssr environment transformRequest produces no data-redesigner-loc attributes', async () => {
-    const ssrEnv = server.environments.ssr
-    if (!ssrEnv) {
-      // Vite 7 ships the environments API — this guard is belt-and-suspenders only.
-      console.warn(
-        '[environment-skip.test] server.environments.ssr not found — skipping scenario 2',
-      )
+  it('ssr environment transformRequest produces no data-redesigner-loc attributes', async (ctx) => {
+    if (!hasEnvironmentsApi) {
+      ctx.skip()
       return
     }
-
-    const result = await ssrEnv.transformRequest('/src/AppSsr.tsx')
+    const ssrEnv = server.environments.ssr
+    // biome-ignore lint/style/noNonNullAssertion: hasEnvironmentsApi guard ensures presence
+    const result = await ssrEnv!.transformRequest('/src/AppSsr.tsx')
     expect(result).not.toBeNull()
     if (!result) return
 
