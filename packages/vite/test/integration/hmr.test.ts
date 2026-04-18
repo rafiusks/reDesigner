@@ -299,10 +299,8 @@ export default function App() {
 
     invalidate(server, alphaPath)
     invalidate(server, betaPath)
-    // Drive both retransforms. Pass the sibling file as ignoredId so the sibling's in-flight
-    // transform doesn't deadlock-block the idle check on this one (Vite's documented bare-form
-    // hazard — see spec §8.3).
     await Promise.all([server.transformRequest(alphaUrl), server.transformRequest(betaUrl)])
+    // id-form of waitForRequestsIdle; bare form has a documented deadlock hazard (spec §8.3).
     await server.waitForRequestsIdle(alphaUrl)
     await server.waitForRequestsIdle(betaUrl)
 
