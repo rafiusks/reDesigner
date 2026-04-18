@@ -44,7 +44,7 @@ Complete when all of the following pass:
 2. Fixture tests green, covering every case in §8.2 (including new cases: `ref-as-prop/`, `fragment-noop/`, `wrapper-components-noop/`, `wrapper-components-react19/`, `wrapper-reexport-chain/`, `memo-to-plain-transition/`, `activity-alias-import/`, `module-scope-jsx/`, `environment-skip/`, `clone-element/`, `compiler-hoist-order/`).
 3. Integration tests green, including HMR (single stable final-state assertion), Fast-Refresh state preservation + registration stability + memo↔plain transition, environment-skip, React-Compiler compat, shutdown (POSIX + Windows), re-init, parallelism (≥50 files).
 4. Full CI matrix green. A committed **GitHub ruleset** (`.github/rulesets/main-protection.json`) is synced to GitHub by `sync-ruleset.yml` (§4.3) and names a single stable summary job (`ci / all-green`) as the required status check — NOT a matrix-label-coupled name.
-5. Playground renders with `data-redesigner-loc` on every rendered **host-element** JSX node, zero React runtime warnings. Wrapper components and the `(module)` synthetic are NOT DOM-tagged.
+5. Playground renders with `data-redesigner-loc` on every rendered **host-element** JSX node, zero React runtime warnings. **These carve-outs are explicitly NOT DOM-tagged (call out prominently in the README's invariants list, not only buried in §3.3):** (a) wrapper components per the skip list, (b) the `(module)` synthetic — module-scope JSX elements will have NO `data-redesigner-loc` on their DOM output; a designer tool clicking a module-root element hits nothing (use `App` as the root instead).
 6. `.redesigner/manifest.json` validates against the shipped JSON Schema; `schemaVersion === "1.0"`.
 7. Manual dogfood: Chrome DevTools inspection confirms `data-redesigner-loc` on host elements pointing to real source. `(module)` is manifest-only by design.
 
@@ -339,7 +339,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
-    timeout-minutes: 15
+    timeout-minutes: 20   # Windows + Defender exclusion + 50-file parallelism + exact Node 20.11.0 tool-cache miss can approach 12+ min first run.
     strategy:
       fail-fast: false
       matrix:
@@ -347,28 +347,30 @@ jobs:
         node: ['20.11.0', '22']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 50 }
-      - uses: actions/setup-node@v4
-        with: { node-version: ${{ matrix.node }} }
+      # Defender exclusion runs BEFORE checkout so the thousands of files being
+      # written aren't scanned in real-time — saves significant wall time on Windows.
       - name: Windows Defender exclusion (hosted runner)
         if: matrix.os == 'windows-2022'
         shell: pwsh
         run: |
           Add-MpPreference -ExclusionPath "${{ github.workspace }}"
           Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\pnpm\store"
+          Add-MpPreference -ExclusionProcess "node.exe"
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 50 }
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ matrix.node }} }
       - name: Corepack preflight
         shell: bash
         run: |
-          if [ "${{ matrix.node }}" = "20.11.0" ]; then
-            npm install -g corepack@latest
-          fi
-          V=$(corepack --version)
+          # Version check FIRST — independent of Node major. Node 22 early builds
+          # also shipped Corepack < 0.31.0; do not trust the matrix cell to imply version.
+          V=$(corepack --version || echo "0.0")
           MAJOR=$(echo "$V" | cut -d. -f1)
           MINOR=$(echo "$V" | cut -d. -f2)
           if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -lt 31 ]; then
-            echo "Corepack $V below 0.31.0 (required for key rotation)"
-            exit 1
+            echo "Corepack $V below 0.31.0 — upgrading"
+            npm install -g corepack@latest
           fi
           corepack enable pnpm
           # Assert the shim is on PATH with the expected version:
@@ -382,7 +384,10 @@ jobs:
         id: pnpm-cache
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-${{ matrix.os }}-${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
+          # Include root package.json in the key so a bump of `packageManager`
+          # (e.g., pnpm@9.15.4 → 9.16.x) cannot restore a store from a prior minor
+          # into a newer client. Lockfile alone does not cover this.
+          key: pnpm-${{ matrix.os }}-${{ matrix.node }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
           restore-keys: |
             pnpm-${{ matrix.os }}-${{ matrix.node }}-
             pnpm-${{ matrix.os }}-
@@ -415,6 +420,9 @@ jobs:
 
   # Stable-name summary job — THIS is what the ruleset requires.
   # Matrix label reorders/changes cannot silently orphan the check.
+  # `if: always()` ensures the check reports even if `test` was cancelled by the
+  # concurrency group; GitHub re-runs required checks against the winning SHA, so
+  # a cancellation-induced failure here is harmless (rerun on the superseding push).
   all-green:
     needs: [test]
     if: always()
@@ -503,6 +511,11 @@ Vite fires configureServer(server)
 Schedule forced initial flush on client buildEnd or first idle tick → writer.quiesce()
     ▼
 Dev server listens
+
+Warm-start note: Vite caches transform results across `vite dev` restarts. On a warm start, the
+Babel pass does NOT re-run, so the manifest writer starts empty (§3.3 invariant 6) and only
+repopulates on first edit. Downstream consumers tolerate this via the reader retry path (§6.6
+step 2 + poll watch).
 ```
 
 ### 5.2 Per-transform
@@ -588,7 +601,7 @@ shutdown() — idempotency flag
        ├─ POSIX: SIGTERM → 2 s → SIGKILL + logger.warn
        │
        └─ Windows:
-             write {"op":"shutdown"}\n to handle.stdin
+             write `{"op":"shutdown"}\n` to handle.stdin
              await "ack" on handle.stdout (line-delimited JSON), 1500 ms timeout (hosted-runner safe)
              if acked → await exit up to 1.5 s
              if no ack OR no exit → taskkill /T /F /PID ${handle.pid}
@@ -640,7 +653,12 @@ export type { Manifest, ComponentRecord, LocRecord, RedesignerOptions, DaemonOpt
 // packages/vite/src/reader.ts — subpath-exported as '@redesigner/vite/reader'
 import type { Manifest } from './core/types-public'
 
-/** The major version this reader was built for. Defaults for readManifest. */
+/**
+ * The major version (integer) this reader was built for.
+ * Used as the default `expectedMajor` in readManifest.
+ * Example: `if (SUPPORTED_MAJOR !== 1) { /* consumer too new * / }`.
+ * (Note: integer, NOT the string "1.0".)
+ */
 export const SUPPORTED_MAJOR: number = 1
 
 export async function readManifest(
@@ -648,13 +666,20 @@ export async function readManifest(
   opts?: {
     /** Defaults to SUPPORTED_MAJOR. Consumers SHOULD pin to the major their code supports. */
     expectedMajor?: number
+    /** Default: 1 (matches §6.6 step 2: retry-once on parse failure). */
     maxRetries?: number
     /** Configurable — Windows SMB paths may need >50ms. Default: 50. */
     retryDelayMs?: number
   }
 ): Promise<Manifest>
 
-/** Computes the canonical contentHash from a Manifest (excluding generatedAt + contentHash). */
+/**
+ * Computes the canonical contentHash from a Manifest.
+ * The function internally strips `generatedAt` and `contentHash` before hashing,
+ * so callers MAY pass a partially-built Manifest (one where `contentHash` is the
+ * empty string or not yet set). Never pass a modified / filtered object; pass the
+ * full Manifest shape and let the function exclude the two fields.
+ */
 export function computeContentHash(manifest: Manifest): string
 ```
 
@@ -732,11 +757,13 @@ export interface LocRecord {
 
 **Schema version rules:**
 
-- `schemaVersion` type is template-literal `` `${number}.${number}` `` — type-compatible across minor bumps.
+- `schemaVersion` type is template-literal `` `${number}.${number}` `` — type-compatible across minor bumps. **The TypeScript type is advisory; real validation is the runtime `parseSchemaVersion` in the reader (§6.6 step 4). TS template literals accept pathological values (`'1.-3'`, `'1.1e10'`); do not rely on the type as a validator.**
 - Additive (field, object entry, new `framework` value) → minor bump.
 - Breaking → major bump.
 - Minor-ahead → warn + continue.
 - Consumers pin on **major** (via `SUPPORTED_MAJOR`). Never pin on the full string.
+
+**Number-type caveat.** The canonical content-hash serialization relies on `JSON.stringify` number defaults. The v0 manifest contains only strings + `lineRange: [number, number]` integer tuples — safe. If a future minor bump introduces floating-point fields, upgrade the serialization to RFC 8785 JCS (handles float edge cases deterministically).
 
 **`componentKey`** stable format; JSON-Schema-level pattern constrains `componentName` to exclude `::`.
 
@@ -766,7 +793,7 @@ JSON Schema (`manifest-schema.json`, draft-2020-12) generated from `core/types-p
   "engines": { "node": ">=20.11.0" },
   "peerDependencies": {
     "vite": "^5 || ^6 || ^7",
-    "@vitejs/plugin-react": "^4 || ^5"
+    "@vitejs/plugin-react": "^5"
   },
   "peerDependenciesMeta": {
     "@vitejs/plugin-react": { "optional": true }
@@ -808,7 +835,7 @@ Notes:
 - ESM-only.
 - `"private": true` prevents accidental publish.
 - **`@redesigner/daemon` NOT in any deps field.**
-- Vite peer `^5 || ^6 || ^7`; plugin-react peer `^4 || ^5`. Vite 8 + plugin-react v6 = deferred widening.
+- Vite peer `^5 || ^6 || ^7`; plugin-react peer `^5`. v4 was dropped at round-5 review because `$RefreshReg$` shape differences were declared-supported-but-untested; v6 (oxc-default) is a deferred widening pending integration test.
 - Corepack upgrades to latest on Node 20.11.0 CI leg.
 - **No `proper-lockfile` runtime dependency.**
 
@@ -882,7 +909,7 @@ Published as `dist/reader-contract.md`. Canonical algorithm:
 | 12c | Commit during rename | `manifestWriter` | Post-flush re-check reschedules | None | unit |
 | 13 | Disk write fails (EACCES/ENOSPC) | `manifestWriter` flush | Retry next debounce; severity ladder | Escalating severity | unit |
 | 14 | Atomic rename EPERM/EBUSY | `manifestWriter` flush | 7-step exponential backoff (~6.35 s) + per-attempt timing at debug | Warning past threshold; final failure = error | unit + CI |
-| 14b | EXDEV | `manifestWriter` flush | Should never occur; log `error` | Red error (plugin bug) | unit |
+| 14b | EXDEV | `manifestWriter` flush | Should never occur (same-dir temp); log `warn` + "plugin bug, please file issue" — downgraded from `error` to match severity ladder intent (non-fatal impossible conditions are warnings, not errors) | Yellow warning (plugin bug) | unit |
 | 14c | Construction collision with `.owner-lock` | Constructor | Throw | Fails to start | unit |
 | 14d | Orphaned tmp files from prior crash | Constructor | Startup sweep | None | unit |
 | 15 | Shutdown before debounce flush | shutdown() | Sync flush + 7-step backoff; console.error fallback | None (clean) | integration |
@@ -912,7 +939,7 @@ Three tiers, Vitest. `fast-check` for properties.
 | `contentHash.test.ts` | Canonical serialization determinism: sorted keys, no whitespace, UTF-8 bytes, no trailing newline. Property-based: shuffle keys, hash matches. |
 | `resolveEnclosingComponent.test.ts` | All component shapes + reserved-displayName rejection. |
 | `plugin.test.ts` | Lifecycle; options merge; `configResolved` throws; user's `babel.config.js` NOT consulted; environment re-init asserts writer is not double-initialized; WeakMap<Env, State> short-circuits for non-client envs. |
-| `manifestWriter.test.ts` | CAS per-file replace. Startup empty-write + mkdir-p + tmp sweep. Debounce + maxWait-from-first-commit. Post-flush re-check. **7-step exponential-backoff** (50/100/200/400/800/1600/3200 ms). Per-attempt duration telemetry at `debug`. EXDEV never occurs. Construction collision throws. contentHash stability + determinism. `quiesce` forces flush. |
+| `manifestWriter.test.ts` | CAS per-file replace. Startup empty-write + mkdir-p + tmp sweep. Debounce + maxWait-from-first-commit. Post-flush re-check. **7-step exponential-backoff** (50/100/200/400/800/1600/3200 ms). Per-attempt duration telemetry at `debug`. EXDEV never occurs. Construction collision throws. contentHash stability + determinism. `quiesce` forces flush. **Timer discipline: all debounce / maxWait / backoff tests MUST use `vi.useFakeTimers()` with `vi.advanceTimersByTimeAsync()` via the injected `clock` seam on the writer constructor. Real-timer backoff tests would approach or exceed 6 s per case and flake on Windows-2022 under Defender.** |
 | `daemonBridge.test.ts` | Injected importer: NOT_FOUND/NOT_EXPORTED vs generic discrimination; contract validation; pipe drain; teardown idempotency; POSIX SIGTERM→SIGKILL; Windows stdin ack handshake (1500 ms) + taskkill fallback; SIGHUP non-win32-only; no `beforeExit`; `shell: false` contract documented. |
 
 ### 8.2 Fixture tests — `test/fixtures/`
@@ -935,17 +962,17 @@ Real Vite dev server, real playground. Per-test tmpdir via `fs.mkdtemp`. `parall
 |---|---|
 | `vite.test.ts` | DOM assertions: every rendered **host-element** within `#root` carries `data-redesigner-loc` (excluding wrapper subtrees + mount). Every value resolves to a manifest entry. Hardcoded-loc spot set. Failure messages name missing components. **Asserts `document.querySelectorAll('[data-redesigner-loc*="(module)"]').length === 0`** — the `(module)` synthetic is manifest-only. |
 | `manifest.test.ts` | Schema validation; reader contract via `readManifest()` + `SUPPORTED_MAJOR`; `contentHash` determinism + change detection; minor-ahead behavior; classic-runtime error names its source. |
-| `hmr.test.ts` | **Subscription ordering is explicit:** `server.ws.on('message', ...)` listener attached BEFORE the file edit. Scenarios: (1) prepend line — quiesce — assert lineRange shifted, loc still resolves. (2) Rename — quiesce — assert old key gone, new present. (3) Two-file cascade — edit rapidly — `updateCount >= 1` (NOT `>= 2` — Vite may batch) AND final manifest contains correct entries for both files. (4) Delete — quiesce — assert entry purged. All waits use `server.waitForRequestsIdle` + `writer.quiesce`; no `setTimeout`. |
+| `hmr.test.ts` | **Subscription ordering is explicit:** `server.ws.on('message', ...)` listener attached BEFORE the file edit. Scenarios: (1) prepend line — quiesce — assert lineRange shifted, loc still resolves. (2) Rename — quiesce — assert old key gone, new present. (3) Two-file cascade — edit rapidly — `updateCount >= 1` (NOT `>= 2` — Vite may batch) AND final manifest contains correct entries for both files. (4) Delete — quiesce — assert entry purged. All waits use `server.waitForRequestsIdle(id)` (the id-form; the bare form has a documented deadlock hazard if ever invoked from a load/transform hook path) + `writer.quiesce`; no `setTimeout`. |
 | `fast-refresh.test.ts` | (a) State preservation via `useState` counter: click 3 times, assert `textContent === "3"`; also mount `const instanceStamp = useRef(Math.random())` exposed via `data-instance-stamp`. Edit unrelated leaf JSX. Assert `textContent === "3"` AND `data-instance-stamp` unchanged. (b) Registration stability: monkey-patch `window.$RefreshReg$` (test pinned to plugin-react v5 shape; noted in test file header that v4 shape diverges). (c) **memo↔plain transition:** start with `export default memo(Foo)`, edit to `export default Foo` via HMR, assert no Fast-Refresh crash and our attribute still resolves correctly (facebook/react#30659 class of regressions). |
 | `environment-skip.test.ts` | `server.transformRequest(url, { ssr: true })` + Vite 6+ `environments.ssr?.transformRequest` → no attribute. `server.ssrLoadModule` + `renderToString` → rendered HTML has zero `data-redesigner-loc`. |
 | `react-compiler.test.ts` | Compiler enabled. (a) Fresh render has attribute at correct source line. (b) Attribute survives prop-change re-render. (c) HMR edit updates attribute (no stale memoization). |
-| `sourcemap.test.ts` | **Column accuracy:** pick a token on a line AFTER the injection point (different line; avoids column drift from the injected attribute's width). `originalPositionFor` returns the exact original line AND column. |
+| `sourcemap.test.ts` | **Column accuracy:** pick a token on a line AFTER the injection point (different line; avoids column drift from the injected attribute's width). `originalPositionFor` returns the exact original line AND column. **Composed-map assertion:** additionally fetch the final map served by Vite (after plugin-react's downstream Babel/Compiler pass has run on our output), parse it, and assert the same token still maps back to the original source line — this is the user-visible contract ("browser DevTools shows correct source"), not just our pre-downstream map. |
 | `reinit.test.ts` | Touch `vite.config.ts`; old shutdown fires; new writer flushes empty manifest; `process._getActiveHandles()` stable; no duplicate daemon. |
-| `parallelism.test.ts` | Under dedicated config. **50 parallel transforms** on distinct files; assert all 50 entries present in final manifest (realistic CAS stress). |
+| `parallelism.test.ts` | Under dedicated config. **50 parallel transforms** on distinct files; assert all 50 entries present in final manifest (realistic CAS stress). **Explicit tmpdir isolation: `beforeEach` creates `fs.mkdtempSync` and points the test's Vite root there. 50 concurrent writers against a shared `.redesigner/` would trip the `.owner-lock` collision throw; per-test tmpdir is non-negotiable for this file.** |
 | `degradation.test.ts` | Injected importer variants covered inline. |
-| `daemon-real.test.ts` | **Three sibling test packages** (distinct specifiers, distinct import cache entries). `daemon-tla` case uses `AbortController` with a 2 s timeout so the unresolved import promise does NOT leak across tests. |
+| `daemon-real.test.ts` | **Three sibling test packages** (distinct specifiers, distinct import cache entries). `daemon-tla` case uses `Promise.race(importPromise, timerPromise)` with a 2 s timer; the underlying TLA import is NOT truly aborted (Node dynamic import is not cancellable), so the test MUST run in its own forked worker to avoid a leaked import pinning the pool. Explicitly annotated `{ pool: 'forks', isolate: true, fileParallelism: false }` via the dedicated config (same as `parallelism.test.ts`). |
 | `hydration-safety.test.ts` | Locks client-only premise. Asserts `renderToString(<App />)` produces HTML with zero `data-redesigner-loc`. Rationale: plugin-react on our untransformed SSR modules emits no attributes. A future SSR spec must update this test deliberately. |
-| `shutdown.test.ts` | Real subprocess fake daemon spawned as `['node', path]` with `shell: false` and `stdio: ['pipe','pipe','pipe']`. Protocol: stdin line-delimited JSON; subprocess acks on stdout. POSIX: SIGTERM → ack → clean flush; escalation: 2 s → SIGKILL. Windows (skip elsewhere): stdin `{"op":"shutdown"}\n` → **1500 ms ack timeout** → on ack, 1.5 s exit → fallback `taskkill /T /F`. Idempotency: double-call performs one flush + one signal/taskkill. |
+| `shutdown.test.ts` | Real subprocess fake daemon spawned as `['node', path]` with `shell: false` and `stdio: ['pipe','pipe','pipe']`. Protocol: stdin line-delimited JSON; subprocess acks on stdout. POSIX: SIGTERM → ack → clean flush; escalation: 2 s → SIGKILL. Windows (skip elsewhere): stdin `{"op":"shutdown"}\n` → **1500 ms ack timeout** → on ack, 1.5 s exit → fallback `taskkill /T /F`. Idempotency: double-call performs one flush + one signal/taskkill. **Vitest `testTimeout: 10_000` for this file: the fallback-path ack-timeout (1.5 s) + taskkill-spawn (up to 1.5 s on slow runners) leaves thin headroom against the default 5 s.** |
 
 ### 8.4 CI matrix
 
@@ -1023,3 +1050,14 @@ Per §4.3. Summary:
 36. **Vite 8 / plugin-react v6 (oxc) is a deferred widening**, not a v0 claim.
 37. **`(module)` synthetic name is reserved.**
 38. **Workflow-level `permissions: { contents: read }`** on CI. Sync-ruleset workflow has fork-execution guard.
+39. **plugin-react peer narrowed to `^5` only** at round-5 review. v4's `$RefreshReg$` shape was declared-supported-but-untested — shipping that invariant is worse than narrowing.
+40. **`sourcemap.test.ts` asserts the COMPOSED map** served by Vite (after plugin-react's downstream pass) in addition to our immediate Babel-output map. End-to-end "DevTools shows correct source" is the user-visible contract.
+41. **CI Corepack preflight version-checks FIRST, upgrades conditionally.** Cannot trust any specific Node release to ship Corepack ≥0.31; Node 22 early builds also shipped older Corepack.
+42. **CI Defender exclusion runs BEFORE checkout** + excludes `node.exe` as a process exclusion. Real-time scanning thousands of checked-out files negates the benefit if ordered after.
+43. **pnpm cache key includes `package.json` hash** (not just the lockfile). `packageManager` bump rotates the cache, preventing a cross-minor store restore.
+44. **`timeout-minutes: 20`** (from 15). Windows first-run with Defender exclusion + tool-cache miss for exact Node 20.11.0 + 50-file parallelism can approach 12+ minutes.
+45. **Timer discipline for backoff/debounce tests:** `vi.useFakeTimers()` with `vi.advanceTimersByTimeAsync()` via injected clock seam. Real-timer backoff under Windows Defender load = documented flake source.
+46. **`daemon-real.test.ts` TLA case runs under its own forked worker** (via the dedicated parallelism config). `Promise.race` with a 2 s timer is a test-level ceiling; Node dynamic-import promises are not cancellable, so the underlying import must not leak to sibling tests.
+47. **EXDEV row downgraded from `error` to `warn`** — non-fatal impossible conditions are warnings, not errors, per the severity-ladder intent.
+48. **Warm-start manifest populates lazily** (Vite transform cache): on `vite dev` restart, the writer begins empty and fills on first edit. Consumers tolerate via reader retry path (§6.6 step 2).
+49. **`SUPPORTED_MAJOR` is an integer (`1`), not a string (`'1.0'`).** Consumers pin on integer major; template-literal `SchemaVersion` type is advisory only — runtime `parseSchemaVersion` is the real guard.
