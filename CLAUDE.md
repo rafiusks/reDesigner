@@ -1,0 +1,4 @@
+pnpm workspace; tests and builds live in packages/vite. Use pnpm --filter @redesigner/vite ... not cd packages/vite && npm .... Root package.json intentionally has no test script.
+ESM-only repo (type: module, Node ≥ 20.11). Use import.meta.dirname, not __dirname.
+@babel/traverse and @babel/generator publish CJS; under ESM interop they expose their real default as .default.default. Pattern: const traverse = (traverseMod as any).default ?? traverseMod. Missing this silently no-ops on the first call.
+Do not hand-edit or hand-format fixture outputs at packages/vite/test/fixtures/**/output.tsx and expected-manifest.json. They are Biome-ignored and tsc-excluded. Regenerate via REDESIGNER_FIXTURE_UPDATE=1 pnpm --filter @redesigner/vite run test:fixtures and add a line to packages/vite/test/fixtures/FIXTURE_CHANGELOG.md — the pre-commit hook blocks fixture edits without one.
