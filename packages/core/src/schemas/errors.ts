@@ -41,6 +41,10 @@ export type ApiErrorCode =
   | 'endpoint-moved'
   | 'session-revalidate-exhausted'
 
+/**
+ * Map every `ApiErrorCode` slug to its JSON-RPC numeric counterpart.
+ * `null` means the slug is REST-only — it never surfaces over the WS/JSON-RPC channel.
+ */
 export const ApiErrorCodeToRpc: Record<ApiErrorCode, RpcErrorCode | null> = {
   'extension-disconnected': RpcErrorCode.ExtensionDisconnected,
   'extension-timeout': RpcErrorCode.ExtensionTimeout,
@@ -84,8 +88,8 @@ export const ApiErrorCodeToHttpStatus: Record<ApiErrorCode, number> = {
   'session-revalidate-exhausted': 401,
 }
 
-/** Reverse lookup: RPC → slug (partial; RPC codes without a slug have no entry). */
-export const ErrorCrosswalk: Partial<Record<RpcErrorCode, ApiErrorCode>> = Object.fromEntries(
+/** Reverse lookup: RPC numeric code → REST slug. Partial: only custom codes with a 1:1 slug mapping. */
+export const RpcToApiErrorCode: Partial<Record<RpcErrorCode, ApiErrorCode>> = Object.fromEntries(
   Object.entries(ApiErrorCodeToRpc)
     .filter(([, rpc]) => rpc !== null)
     .map(([api, rpc]) => [rpc, api]),

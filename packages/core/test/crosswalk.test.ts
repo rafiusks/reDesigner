@@ -3,6 +3,7 @@ import {
   ApiErrorCodeToHttpStatus,
   ApiErrorCodeToRpc,
   RpcErrorCode,
+  RpcToApiErrorCode,
 } from '@redesigner/core/schemas'
 import { expect, test } from 'vitest'
 
@@ -39,6 +40,7 @@ test('crosswalks are total over ApiErrorCode', () => {
 
 test('RpcErrorCode values are in JSON-RPC server-error range -32000..-32099 or standard codes', () => {
   for (const v of Object.values(RpcErrorCode)) {
+    // Numeric enums reverse-map: Object.values returns both numbers and their string aliases. Filter to numbers.
     if (typeof v === 'number') {
       const inServerRange = v >= -32099 && v <= -32000
       const isStandard =
@@ -52,6 +54,14 @@ test('ApiErrorCodeToRpc null entries are REST-only (have HTTP status)', () => {
   for (const [api, rpc] of Object.entries(ApiErrorCodeToRpc)) {
     if (rpc === null) {
       expect(ApiErrorCodeToHttpStatus[api as ApiErrorCode]).toBeTypeOf('number')
+    }
+  }
+})
+
+test('RpcToApiErrorCode inverts ApiErrorCodeToRpc for non-null entries', () => {
+  for (const [api, rpc] of Object.entries(ApiErrorCodeToRpc)) {
+    if (rpc !== null) {
+      expect(RpcToApiErrorCode[rpc as RpcErrorCode]).toBe(api)
     }
   }
 })
