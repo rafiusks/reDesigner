@@ -25,7 +25,7 @@ export function encodeCloseReason(reason: CloseReason): string {
   const bytes = Buffer.byteLength(serialized, 'utf8')
   if (bytes > MAX_REASON_BYTES) {
     throw new Error(
-      `CloseReason exceeds RFC 6455 budget: ${bytes} bytes > ${MAX_REASON_BYTES} (${MAX_REASON_BYTES} max).`,
+      `CloseReason exceeds RFC 6455 budget: ${bytes} bytes > ${MAX_REASON_BYTES} byte budget.`,
     )
   }
   return serialized

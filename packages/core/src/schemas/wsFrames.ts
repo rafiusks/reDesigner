@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 /** JSON-RPC 2.0 error object (§5). */
 export const JsonRpcErrorSchema = z
   .object({
@@ -29,7 +31,7 @@ export type RedesignerMethod = z.infer<typeof RedesignerMethod>
 export const JsonRpcRequestSchema = z
   .object({
     jsonrpc: z.literal('2.0'),
-    id: z.string().uuid(),
+    id: z.string().regex(UUID_V4_RE, 'must be a UUIDv4 string'),
     method: RedesignerMethod,
     params: z.unknown().optional(),
   })
@@ -38,6 +40,8 @@ export type JsonRpcRequest = z.infer<typeof JsonRpcRequestSchema>
 
 /**
  * JSON-RPC notification frame — no `id`.
+ * Strict on purpose: JSON-RPC 2.0 §4.1 does not forbid extra fields, but we reject them
+ * on the wire to keep the contract narrow and catch drift early.
  */
 export const JsonRpcNotificationSchema = z
   .object({
@@ -56,7 +60,7 @@ export type JsonRpcNotification = z.infer<typeof JsonRpcNotificationSchema>
 export const JsonRpcResponseSchema = z
   .object({
     jsonrpc: z.literal('2.0'),
-    id: z.union([z.string().uuid(), z.null()]),
+    id: z.union([z.string().regex(UUID_V4_RE, 'must be a UUIDv4 string'), z.null()]),
     result: z.unknown().optional(),
     error: JsonRpcErrorSchema.optional(),
   })

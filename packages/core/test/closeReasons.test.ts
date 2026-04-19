@@ -10,10 +10,7 @@ test('throws when serialized JSON exceeds 123 UTF-8 bytes', () => {
   expect(() => encodeCloseReason(tooMany)).toThrow(/123/)
 })
 
-test('multi-byte UTF-8 counts bytes not code points', () => {
-  // 60 × 3-byte emoji-like char hit the wall even if code-point count fits.
-  // We use the schema's .strict() to reject unknown keys, so we probe bytes via `accepted` length.
-  // Approach: compose an accepted array whose JSON string (10*999999…) pushes over 123 bytes.
+test('rejects when accepted[] serialization exceeds budget', () => {
   const large = { accepted: Array.from({ length: 30 }, () => 999999999) }
   expect(() => encodeCloseReason(large)).toThrow(/123/)
 })
