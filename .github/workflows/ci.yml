@@ -56,6 +56,20 @@ jobs:
             pnpm-${{ matrix.os }}-${{ matrix.node }}-
             pnpm-${{ matrix.os }}-
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Guard against raw === token comparisons
+        shell: bash
+        run: |
+          # Find any line in daemon src that compares a *Token* identifier with raw ===.
+          # Allowed pattern: compareToken(...).
+          # Disallowed: `if (token === expected)` or `foo.token === bar`.
+          if grep -rnE '[A-Za-z_]*[Tt]oken[A-Za-z_]*\s*===' packages/daemon/src/; then
+            echo "::error::Raw === token comparison found. Use compareToken() from ./auth.js instead."
+            exit 1
+          fi
+          if grep -rnE '===\s*[A-Za-z_]*[Tt]oken[A-Za-z_]*' packages/daemon/src/; then
+            echo "::error::Raw === token comparison found. Use compareToken() from ./auth.js instead."
+            exit 1
+          fi
       - run: pnpm -r run lint
       - run: pnpm -r run typecheck
       - run: pnpm -r run test
