@@ -378,9 +378,10 @@ describe('createExchangeRoute — TOFU ext-ID pinning', () => {
     await harness.close()
   })
 
-  it('auto-reset: when no trusted-ext-id file + boot recent + single ext within 10s, accepts new ext', async () => {
+  it('auto-reset: pinned ext-ID replaced when boot recent + single origin in 10s window', async () => {
     const projectRoot = uniqueProjectRoot()
-    // No prior file → fresh state. Boot time is now.
+    // First exchange pins EXT_ID_A; second exchange from EXT_ID_B within the boot
+    // window with only one prior origin triggers auto-reset (existing-pin case).
     const bootAt = Date.now()
     const harness = await mountHandler({
       rootToken,
@@ -390,7 +391,7 @@ describe('createExchangeRoute — TOFU ext-ID pinning', () => {
       now: () => bootAt + 1000, // within 10s window
     })
 
-    // First request from EXT_ID_A — pins
+    // First exchange from EXT_ID_A — pins the ext-ID.
     const res1 = await rawPost(
       harness.port,
       '/exchange',

@@ -221,6 +221,9 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
       return { allow: true, persist: false }
     }
     // Pin exists but this is a different ext-ID. Auto-reset?
+    // Spec §3.2 literal wording lists "no file exists" as auto-reset condition 1,
+    // but that case is first-use (any ext-ID pins). Auto-reset is only meaningful
+    // when a pin exists and the new ext-ID differs — handled here.
     // Per spec the operative intent is "unpacked-dev-reload ext-ID churn".
     // The first successful exchange writes the pin. A subsequent reload can
     // arrive with a fresh ext-ID still inside the 10s boot window. So reset
