@@ -1,0 +1,32 @@
+{
+  "name": "@redesigner/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "bin": {
+    "redesigner-mcp": "./dist/cli.js"
+  },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=22.0.0" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:update-snapshot": "vitest run -u",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@redesigner/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.25.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
+  }
+}
