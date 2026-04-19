@@ -23,9 +23,11 @@ jobs:
           Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\pnpm\store"
           Add-MpPreference -ExclusionProcess "node.exe"
       - uses: actions/checkout@v4
-        with: { fetch-depth: 50 }
+        with:
+          fetch-depth: 50
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ matrix.node }} }
+        with:
+          node-version: ${{ matrix.node }}
       - name: Corepack preflight
         shell: bash
         run: |
