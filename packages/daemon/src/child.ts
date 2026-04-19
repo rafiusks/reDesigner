@@ -59,7 +59,10 @@ async function main(): Promise<void> {
       }
       eventBus.broadcast({
         type: 'manifest.updated',
-        payload: { contentHash: m.contentHash, componentCount: Object.keys(m.components).length },
+        payload: {
+          contentHash: m.contentHash,
+          componentCount: manifestWatcher.getComponentCount(),
+        },
       })
     },
     fs.promises.readFile,
@@ -72,9 +75,8 @@ async function main(): Promise<void> {
   const instanceId = crypto.randomUUID()
 
   // Step 6: discover ephemeral port; assert strict loopback + integer port.
-  // Task 13 smoke-test learning: server needs port at construction for Host check,
-  // so bind a throwaway server first to discover a port, close it, and hand the
-  // port to createDaemonServer for listen.
+  // createDaemonServer needs the port at construction (Host-allowlist check),
+  // so a throwaway server binds :0 first to learn the port before real listen.
   const port = await new Promise<number>((resolve, reject) => {
     const tmpServer = http.createServer(() => {})
     tmpServer.on('error', reject)

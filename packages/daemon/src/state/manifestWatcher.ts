@@ -11,7 +11,7 @@ const STAT_POLL_MS = 3000
 
 export class ManifestWatcher {
   private cached: Manifest | null = null
-  private cachedContentHash: string | null = null
+  private cachedComponentCount = 0
   private cachedMtimeMs = 0
   private watcher: fs.FSWatcher | null = null
   private debounceTimer: NodeJS.Timeout | null = null
@@ -131,12 +131,12 @@ export class ManifestWatcher {
         }
         const recomputedHash = crypto.createHash('sha256').update(raw).digest('hex')
         const reconciled: Manifest = { ...validated.data, contentHash: recomputedHash }
-        if (recomputedHash === this.cachedContentHash) {
+        if (recomputedHash === this.cached?.contentHash) {
           this.cachedMtimeMs = st.mtimeMs
           return
         }
         this.cached = reconciled
-        this.cachedContentHash = recomputedHash
+        this.cachedComponentCount = Object.keys(reconciled.components).length
         this.cachedMtimeMs = st.mtimeMs
         this.stats.validated++
         this.onValidated(reconciled)
@@ -157,6 +157,10 @@ export class ManifestWatcher {
 
   getCached(): Manifest | null {
     return this.cached
+  }
+
+  getComponentCount(): number {
+    return this.cachedComponentCount
   }
 
   async stop(): Promise<void> {

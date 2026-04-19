@@ -26,6 +26,9 @@ interface CachedHandoff {
 
 const WARM_TIMEOUT_MS = 250
 const COLD_TIMEOUT_MS = 500
+// Client-side HTTP wait. Must stay 1s longer than the daemon-side timeouts
+// in packages/daemon/src/routes/browserTools.ts so the daemon surfaces the
+// timeout as 504 ExtensionTimeout rather than the shim giving up first.
 const COMPUTED_STYLES_TIMEOUT_MS = 6_000
 const DOM_SUBTREE_TIMEOUT_MS = 11_000
 const UNREACHABLE_TTL_MS = 1_000
@@ -35,9 +38,9 @@ const AUTH_RETRY_SLEEP_MS = 100
 
 export class DaemonBackend extends FileBackend {
   private handoff: CachedHandoff | null = null
+  private handoffPathCache: string | null = null
   private unreachableUntil = 0
   private unreachableReason: string | null = null
-  private firstVerdictLogged = false
   private wasWarmLastCall = false
   private consecutiveAuthFails = 0
   private lastAuthFailAt = 0
@@ -51,10 +54,7 @@ export class DaemonBackend extends FileBackend {
   private markUnreachable(reason: string, permanent = false): void {
     this.unreachableUntil = Date.now() + UNREACHABLE_TTL_MS
     if (permanent) this.permanentUnreachable = true
-    if (this.unreachableReason !== reason) {
-      this.unreachableReason = reason
-      this.firstVerdictLogged = true
-    }
+    this.unreachableReason = reason
   }
 
   private markReachable(): void {
@@ -63,6 +63,7 @@ export class DaemonBackend extends FileBackend {
   }
 
   private resolveHandoffPath(): string {
+    if (this.handoffPathCache !== null) return this.handoffPathCache
     let realRoot: string
     try {
       realRoot = fs.realpathSync(this.opts.projectRoot)
@@ -74,15 +75,18 @@ export class DaemonBackend extends FileBackend {
       process.platform === 'win32'
         ? (process.env.USERNAME ?? 'w')
         : String(process.getuid?.() ?? 'w')
+    let result: string
     if (process.platform === 'linux') {
       const root = process.env.XDG_RUNTIME_DIR ?? path.join(os.tmpdir(), `redesigner-${uid}`)
-      return path.join(root, 'redesigner', projectHash, 'daemon-v1.json')
+      result = path.join(root, 'redesigner', projectHash, 'daemon-v1.json')
+    } else if (process.platform === 'darwin') {
+      result = path.join(os.tmpdir(), `com.redesigner.${uid}`, projectHash, 'daemon-v1.json')
+    } else {
+      const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
+      result = path.join(base, 'redesigner', uid, projectHash, 'daemon-v1.json')
     }
-    if (process.platform === 'darwin') {
-      return path.join(os.tmpdir(), `com.redesigner.${uid}`, projectHash, 'daemon-v1.json')
-    }
-    const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
-    return path.join(base, 'redesigner', uid, projectHash, 'daemon-v1.json')
+    this.handoffPathCache = result
+    return result
   }
 
   private invalidateParsed(): void {

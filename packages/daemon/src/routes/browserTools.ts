@@ -13,6 +13,8 @@ const BrowserToolBodySchema = z
   })
   .strict()
 
+// Server-side RPC wait. Client timeouts in packages/mcp/src/daemonBackend.ts
+// are 1s longer so the MCP shim never times out before the daemon does.
 const TIMEOUT_COMPUTED_STYLES_MS = 5000
 const TIMEOUT_DOM_SUBTREE_MS = 10000
 

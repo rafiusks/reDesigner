@@ -99,6 +99,6 @@ export class EventBus {
       sub.ws.close(4429, 'drain loop limit')
       return
     }
-    // Post-drain: ext fetches fresh snapshot via hello rebroadcast (wired in Task 12).
+    // TODO post-drain hello rebroadcast so ext fetches a fresh snapshot.
   }
 }

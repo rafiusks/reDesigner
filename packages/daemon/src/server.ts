@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
-import { UNAUTHORIZED_HEADERS, compareToken } from './auth.js'
+import { UNAUTHORIZED_HEADERS, compareToken, extractBearer } from './auth.js'
 import { type TokenBucket, createTokenBucket } from './rateLimit.js'
 import { handleBrowserToolPost } from './routes/browserTools.js'
 import { handleHealthGet } from './routes/health.js'
@@ -66,12 +66,7 @@ export function createDaemonServer(opts: ServerOptions): {
 
     // 3–4. Auth: extract bearer, normalized constant-time compare.
     //      Unauth bucket applies ONLY when auth is missing/invalid (valid-token bypass).
-    const authHeader = req.headers.authorization
-    const provided =
-      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-        ? authHeader.slice('Bearer '.length)
-        : undefined
-    const authed = compareToken(provided, opts.token)
+    const authed = compareToken(extractBearer(req), opts.token)
 
     if (!authed) {
       if (!unauthBucket.tryConsume()) {

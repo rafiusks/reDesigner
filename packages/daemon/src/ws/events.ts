@@ -142,7 +142,7 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
             manifestMeta: manifest
               ? {
                   contentHash: manifest.contentHash,
-                  componentCount: Object.keys(manifest.components).length,
+                  componentCount: opts.manifestWatcher.getComponentCount(),
                 }
               : null,
           },
