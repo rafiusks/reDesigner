@@ -176,7 +176,11 @@ describe('degradation: daemon required (package absent)', () => {
     // ERR_MODULE_NOT_FOUND surfaces as expected and the required-throw path fires.
     const SRC_PLUGIN = path.resolve(PKG_ROOT, 'src/index.ts')
     const VITE_INDEX = path.resolve(PKG_ROOT, 'node_modules/vite/dist/node/index.js')
-    const TSX_BIN = path.resolve(PKG_ROOT, 'node_modules/.bin/tsx')
+    // On Windows the .bin shim is a .cmd file; execFile won't exec it without shell.
+    const TSX_BIN = path.resolve(
+      PKG_ROOT,
+      process.platform === 'win32' ? 'node_modules/.bin/tsx.cmd' : 'node_modules/.bin/tsx',
+    )
     const REACT_DEV_RUNTIME = path.join(REACT_DIR, 'jsx-dev-runtime.js')
     const REACT_JSX_RUNTIME = path.join(REACT_DIR, 'jsx-runtime.js')
     const REACT_INDEX = path.join(REACT_DIR, 'index.js')
@@ -222,6 +226,8 @@ try {
       const result = await execFileAsync(TSX_BIN, [scriptPath], {
         timeout: 14000,
         env: { ...process.env, NODE_NO_WARNINGS: '1' },
+        // shell required on Windows so the .cmd shim is executed via cmd.exe
+        shell: process.platform === 'win32',
       })
       stdout = result.stdout
       stderr = result.stderr
