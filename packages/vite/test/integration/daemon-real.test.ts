@@ -92,7 +92,7 @@ describe('DaemonBridge start (real fixture packages)', () => {
     await expect(
       bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: () => import(THROWS_URL),
         logger: c.logger,
@@ -114,7 +114,7 @@ describe('DaemonBridge start (real fixture packages)', () => {
     await expect(
       bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         // Cast through unknown: the fixture does not satisfy the importer's
         // return type (missing startDaemon), which is exactly the condition
@@ -138,7 +138,7 @@ describe('DaemonBridge start (real fixture packages)', () => {
     await expect(
       bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: () => import(TLA_URL),
         logger: c.logger,
@@ -161,7 +161,7 @@ describe('DaemonBridge start (real fixture packages)', () => {
     try {
       await bridge.start({
         mode: 'required',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: () => import(THROWS_URL),
         logger: c.logger,
@@ -182,7 +182,7 @@ describe('DaemonBridge start (real fixture packages)', () => {
     await expect(
       bridge.start({
         mode: 'required',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: () =>
           import(NO_EXPORT_URL) as unknown as ReturnType<
@@ -202,7 +202,7 @@ describe('DaemonBridge start (real fixture packages)', () => {
     await expect(
       bridge.start({
         mode: 'required',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: () => import(TLA_URL),
         logger: c.logger,

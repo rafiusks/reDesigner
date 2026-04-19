@@ -21,11 +21,10 @@ interface ClientState {
 
 function normalizeDaemon(input: RedesignerOptions['daemon']): {
   mode: 'auto' | 'required' | 'off'
-  port: number
 } {
-  if (!input) return { mode: 'auto', port: 0 }
-  if (typeof input === 'string') return { mode: input, port: 0 }
-  return { mode: input.mode ?? 'auto', port: input.port ?? 0 }
+  if (!input) return { mode: 'auto' }
+  if (typeof input === 'string') return { mode: input }
+  return { mode: input.mode ?? 'auto' }
 }
 
 function loadTsconfig(root: string): unknown {
@@ -110,7 +109,7 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
 
       await client.daemon.start({
         mode: daemonOpts.mode,
-        port: daemonOpts.port,
+        projectRoot: client.projectRoot,
         manifestPath: client.manifestPath,
         // biome-ignore lint/suspicious/noExplicitAny: dynamic import path; TS static analyser requires string literal
         importer: () => import('@redesigner/daemon' as any),

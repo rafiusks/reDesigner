@@ -30,8 +30,8 @@ function mockHandle(pid = 1234): TestHandle {
 function baseOpts(overrides: Partial<DaemonBridgeOptions> = {}): DaemonBridgeOptions {
   return {
     mode: 'auto',
-    port: 0,
-    manifestPath: '/tmp/manifest.json',
+    projectRoot: '/tmp/project',
+    manifestPath: '/tmp/project/.redesigner/manifest.json',
     importer: async () => ({ startDaemon: async () => mockHandle() }),
     logger: mockLogger(),
     ...overrides,
@@ -46,6 +46,27 @@ describe('DaemonBridge', () => {
   })
   afterEach(() => {
     if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform)
+  })
+
+  it('startDaemon called with { manifestPath } only (no port)', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    const startDaemonSpy = vi.fn(async () => mockHandle(99999))
+    const b = new DaemonBridge()
+    const opts = baseOpts({
+      importer: async () => ({ startDaemon: startDaemonSpy }),
+    })
+    await b.start(opts)
+    expect(startDaemonSpy).toHaveBeenCalledOnce()
+    const calls = startDaemonSpy.mock.calls as unknown as Array<[Record<string, unknown>]>
+    const callArg = calls[0]?.[0] ?? {}
+    expect(callArg).toEqual({ manifestPath: opts.manifestPath })
+    expect(callArg).not.toHaveProperty('port')
+    const shut = b.shutdown(opts)
+    // Allow shutdown to fall back from POST (no handoff file) to SIGTERM and unblock.
+    const results = startDaemonSpy.mock.results as unknown as Array<{ value: Promise<TestHandle> }>
+    const handle = await results[0]?.value
+    handle?.stdout.end()
+    await shut
   })
 
   it('mode=auto + ERR_MODULE_NOT_FOUND → warn once, null handle', async () => {

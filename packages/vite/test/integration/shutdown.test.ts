@@ -160,7 +160,7 @@ describe('DaemonBridge shutdown (real subprocess)', () => {
       const bridge = new DaemonBridge()
       await bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: async () => ({ startDaemon: async () => handle }),
         logger: c.logger,
@@ -191,7 +191,7 @@ describe('DaemonBridge shutdown (real subprocess)', () => {
       const bridge = new DaemonBridge()
       await bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: async () => ({ startDaemon: async () => handle }),
         logger: c.logger,
@@ -221,7 +221,7 @@ describe('DaemonBridge shutdown (real subprocess)', () => {
       const bridge = new DaemonBridge()
       await bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: async () => ({ startDaemon: async () => handle }),
         logger: c.logger,
@@ -268,7 +268,7 @@ describe('DaemonBridge shutdown (real subprocess)', () => {
       const bridge = new DaemonBridge()
       await bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: async () => ({ startDaemon: async () => handle }),
         logger: c.logger,
@@ -304,7 +304,7 @@ describe('DaemonBridge shutdown (real subprocess)', () => {
       const bridge = new DaemonBridge()
       await bridge.start({
         mode: 'auto',
-        port: 0,
+        projectRoot: '/tmp',
         manifestPath: '/tmp/manifest.json',
         importer: async () => ({ startDaemon: async () => handle }),
         logger: c.logger,

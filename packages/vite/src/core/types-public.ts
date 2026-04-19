@@ -12,7 +12,6 @@ export type {
 
 export interface DaemonOptions {
   mode?: 'auto' | 'required' | 'off'
-  port?: number
 }
 
 export interface RedesignerOptions {

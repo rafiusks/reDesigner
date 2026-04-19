@@ -1,4 +1,8 @@
 import { spawn as nodeSpawn } from 'node:child_process'
+import crypto from 'node:crypto'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import type { Logger } from '../core/types-internal'
 
@@ -12,10 +16,10 @@ export interface DaemonHandle {
 
 export interface DaemonBridgeOptions {
   mode: 'auto' | 'required' | 'off'
-  port: number
+  projectRoot: string
   manifestPath: string
   importer: () => Promise<{
-    startDaemon: (opts: { manifestPath: string; port: number }) => Promise<DaemonHandle>
+    startDaemon: (opts: { manifestPath: string }) => Promise<DaemonHandle>
   }>
   logger: Logger
   /** Injectable spawn (for taskkill test seams). */
@@ -45,10 +49,64 @@ class DaemonImportTimeoutError extends Error {
   }
 }
 
+/**
+ * Handoff wire contract matching spec §4 (Handoff shape). Kept inline rather than
+ * imported from @redesigner/daemon so the bridge stays self-contained when the
+ * daemon package is not installed (optional runtime peer; auto mode falls back to
+ * manifest-only). Authentication-relevant fields only: host, port, token, instanceId.
+ */
+interface Handoff {
+  serverVersion: string
+  instanceId: string
+  pid: number
+  host: string
+  port: number
+  token: string
+  projectRoot: string
+  startedAt: number
+}
+
+/**
+ * Resolve handoff path per spec §4 OS runtime-dir rules. Mirrors
+ * `@redesigner/daemon`'s `resolveHandoffPath` — replicated inline so the bridge
+ * doesn't take a hard dep on the daemon package (optional peer). Must stay in
+ * lockstep: Linux $XDG_RUNTIME_DIR/redesigner, macOS $TMPDIR/com.redesigner.${uid},
+ * Windows %LOCALAPPDATA%\redesigner\${uid}; fallback on Linux to
+ * ${os.tmpdir()}/redesigner-${uid}/ when XDG_RUNTIME_DIR is unset.
+ */
+function resolveHandoffPath(projectRoot: string): string {
+  const uid =
+    process.platform === 'win32' ? (process.env.USERNAME ?? 'w') : String(process.getuid?.() ?? 'w')
+  let real: string
+  try {
+    real = fs.realpathSync(projectRoot)
+  } catch {
+    real = projectRoot
+  }
+  const projectHash = crypto.createHash('sha256').update(real).digest('hex').slice(0, 16)
+  let root: string
+  if (process.platform === 'linux') {
+    root = process.env.XDG_RUNTIME_DIR
+      ? path.join(process.env.XDG_RUNTIME_DIR, 'redesigner')
+      : path.join(os.tmpdir(), `redesigner-${uid}`)
+  } else if (process.platform === 'darwin') {
+    root = path.join(os.tmpdir(), `com.redesigner.${uid}`)
+  } else if (process.platform === 'win32') {
+    const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
+    root = path.join(base, 'redesigner', uid)
+  } else {
+    // Unsupported platform: return a path that won't exist → readFileSync throws →
+    // shutdownPosix falls through to SIGTERM, matching auto-mode soft-fail posture.
+    root = path.join(os.tmpdir(), `redesigner-${uid}`)
+  }
+  return path.join(root, projectHash, 'daemon-v1.json')
+}
+
 export class DaemonBridge {
   private handle: DaemonHandle | null = null
   private shutdownCalled = false
   private signalHandlers: Array<{ signal: NodeJS.Signals; fn: () => void }> = []
+  private handoffPath: string | null = null
 
   async start(opts: DaemonBridgeOptions): Promise<void> {
     if (opts.mode === 'off') return
@@ -110,7 +168,7 @@ export class DaemonBridge {
       return
     }
 
-    const handle = await mod.startDaemon({ manifestPath: opts.manifestPath, port: opts.port })
+    const handle = await mod.startDaemon({ manifestPath: opts.manifestPath })
     const handleRecord = handle as unknown as Record<string, unknown>
     for (const key of REQUIRED_HANDLE_KEYS) {
       const value = handleRecord[key]
@@ -126,6 +184,7 @@ export class DaemonBridge {
       opts.logger.warn(`[daemon] ${buf.toString().trimEnd()}`),
     )
     this.handle = handle
+    this.handoffPath = resolveHandoffPath(opts.projectRoot)
 
     const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM']
     // SIGHUP is POSIX-only — registering on Windows deadlocks the process (nodejs/node#10165).
@@ -155,6 +214,13 @@ export class DaemonBridge {
   }
 
   private async shutdownPosix(h: DaemonHandle, opts: DaemonShutdownOptions): Promise<void> {
+    // Preferred path: authenticated POST /shutdown per spec §4 alive-orphan sequence.
+    // Read handoff → authenticated fetch with 500ms timeout → if OK, wait 500ms for
+    // graceful exit → else fall through to signal. Any failure (missing file, parse,
+    // network, non-200) silently falls through to SIGTERM → SIGKILL.
+    const posted = await this.tryPostShutdown(h)
+    if (posted) return
+
     try {
       process.kill(h.pid, 'SIGTERM')
     } catch {}
@@ -171,6 +237,58 @@ export class DaemonBridge {
       } catch {}
       opts.logger.warn('[redesigner] daemon did not exit on SIGTERM; escalated to SIGKILL')
     }
+  }
+
+  /**
+   * Authenticated POST /shutdown. Returns true iff the daemon acknowledged AND
+   * the child exited within 500ms. False means caller should fall back to signals.
+   * Any thrown error inside is swallowed — the shutdown is best-effort.
+   */
+  private async tryPostShutdown(h: DaemonHandle): Promise<boolean> {
+    const handoffPath = this.handoffPath
+    if (!handoffPath) return false
+    let handoff: Handoff
+    try {
+      const raw = fs.readFileSync(handoffPath, 'utf8')
+      handoff = JSON.parse(raw) as Handoff
+      if (
+        typeof handoff.host !== 'string' ||
+        typeof handoff.port !== 'number' ||
+        typeof handoff.token !== 'string' ||
+        typeof handoff.instanceId !== 'string'
+      ) {
+        return false
+      }
+    } catch {
+      return false
+    }
+    let ok = false
+    try {
+      const res = await fetch(`http://${handoff.host}:${handoff.port}/shutdown`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${handoff.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ instanceId: handoff.instanceId }),
+        signal: AbortSignal.timeout(500),
+      })
+      ok = res.ok
+    } catch {
+      return false
+    }
+    if (!ok) return false
+    // Daemon accepted shutdown — give it 500ms to exit gracefully. If stdout
+    // 'end' fires within the window, the child is down and we're done; otherwise
+    // fall back to signals (returns false).
+    return await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 500)
+      timer.unref?.()
+      h.stdout.once('end', () => {
+        clearTimeout(timer)
+        resolve(true)
+      })
+    })
   }
 
   private async shutdownWindows(h: DaemonHandle, opts: DaemonShutdownOptions): Promise<void> {
