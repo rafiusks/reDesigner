@@ -2,7 +2,7 @@
 
 ## Environment
 
-1. Node ≥ 22.0.0. Devtools require Node 22 (`ts-json-schema-generator@2.9` requires `>=22`, `@vitejs/plugin-react@5` requires `^20.19.0 || >=22.12.0`); we test only on Node 22 LTS in CI.
+1. Node ≥ 22.0.0. Devtools require Node 22 (`ts-json-schema-generator@2.9` requires `>=22`, `@vitejs/plugin-react@5` requires `^20.19.0 || >=22.12.0`); we test only on Node 22 LTS in CI. Windows CI is disabled in v0 — test-timing + subprocess path-to-file-URL issues are Windows-specific; revisit post-v0.
 2. Enable Corepack: `corepack enable`. Corepack must be ≥ 0.31.0 (npm rotated signing keys in early 2025; older Corepack fails signature verification on modern pnpm releases). If `corepack --version` reports `0.30` or below, run `npm install -g corepack@latest`.
 3. Behind a corporate proxy with MITM: set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` and, if signature verification still fails, `COREPACK_NPM_REGISTRY=https://your-mirror`.
 4. `pnpm install`.
