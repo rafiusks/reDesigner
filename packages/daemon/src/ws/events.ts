@@ -1,7 +1,8 @@
 import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { encodeCloseReason } from '@redesigner/core/schemas'
 import { type RawData, type WebSocket, WebSocketServer } from 'ws'
-import { compareToken, extractBearer } from '../auth.js'
+import { compareToken, extractBearer, extractSubprotocolToken } from '../auth.js'
 import { hostAllow } from '../hostAllow.js'
 import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
@@ -14,6 +15,13 @@ import type { RpcCorrelation } from './rpcCorrelation.js'
 const SINCE_RE = /^(0|[1-9][0-9]{0,15})$/
 const ORIGIN_ALLOW = /^(chrome-extension:\/\/|moz-extension:\/\/|vscode-webview:\/\/)/
 
+/**
+ * Server-supported WS wire versions. Echoed back in Sec-WebSocket-Protocol as
+ * `redesigner-v<max-intersection>`; also governs 4406 close rejection when the
+ * client's offer doesn't overlap.
+ */
+export const SUPPORTED_WS_VERSIONS: readonly number[] = [1]
+
 export function shouldRejectOrigin(origin: string | undefined): boolean {
   if (origin === undefined) return false
   if (origin === 'null') return true
@@ -24,6 +32,30 @@ export function parseSince(raw: string | null | undefined): number | null {
   if (raw == null) return null
   if (!SINCE_RE.test(raw)) return null
   return Number(raw)
+}
+
+/**
+ * Parse `?v=1,2,3` query-string version list.
+ *
+ *   null   → query param absent (no client constraint)
+ *   []     → param present but empty / all tokens non-integer (unacceptable; caller uses to force 4406)
+ *   [N…]   → deduped, desc-sorted integer versions
+ *
+ * Non-integer tokens are silently dropped; empty result from non-empty input is
+ * what forces 4406 (rather than treating as "unspecified").
+ */
+export function parseQueryVersions(raw: string | null | undefined): number[] | null {
+  if (raw == null) return null
+  const tokens = raw.split(',').map((t) => t.trim())
+  const ints: number[] = []
+  for (const t of tokens) {
+    if (t.length === 0) continue
+    if (!/^\d+$/.test(t)) continue
+    const n = Number.parseInt(t, 10)
+    if (Number.isFinite(n) && n > 0 && !ints.includes(n)) ints.push(n)
+  }
+  ints.sort((a, b) => b - a)
+  return ints
 }
 
 export interface EventsOptions {
@@ -43,9 +75,35 @@ const PING_INTERVAL_MS = 10_000
 const PONG_TIMEOUT_MS = 5_000
 const MAX_PAYLOAD_BYTES = 256 * 1024
 
-function writeHttpReject(socket: Duplex, status: number, reason: string): void {
+// Parse integer versions from redesigner-v<N> subprotocol entries. Deduped,
+// desc-sorted so callers can use [0] as the max. Malformed entries are dropped.
+function parseSubprotocolVersions(offers: readonly string[]): number[] {
+  const out: number[] = []
+  for (const o of offers) {
+    const m = /^redesigner-v(\d+)$/.exec(o)
+    if (m === null) continue
+    const digits = m[1]
+    if (digits === undefined) continue
+    const n = Number.parseInt(digits, 10)
+    if (Number.isFinite(n) && n > 0 && !out.includes(n)) out.push(n)
+  }
+  out.sort((a, b) => b - a)
+  return out
+}
+
+function writeHttpReject(
+  socket: Duplex,
+  status: number,
+  reason: string,
+  extraHeaders?: Record<string, string>,
+): void {
   try {
-    socket.write(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\n\r\n`)
+    const lines = [`HTTP/1.1 ${status} ${reason}`, 'Connection: close']
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) lines.push(`${k}: ${v}`)
+    }
+    lines.push('', '')
+    socket.write(lines.join('\r\n'))
   } catch {
     // socket may already be gone
   }
@@ -62,6 +120,80 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
   const isAllowedHost = hostAllow(opts.port)
   let subscriber: WebSocket | null = null
 
+  /**
+   * Complete a WS handshake that echoes exactly `echoProtocol` (or no
+   * protocol at all when `echoProtocol === null`) and immediately close with
+   * the given code/reason. Used when pre-handshake gating passed (version=13,
+   * host, origin, rate) but subprotocol/auth/negotiation failed.
+   *
+   * Why echoProtocol: RFC 6455 doesn't force the server to echo a subprotocol
+   * when the client offers some, but the widely-deployed `ws` client library
+   * aborts the handshake ("Server sent no subprotocol") when it offered and
+   * the server didn't echo. That aborts BEFORE the close frame is read, so
+   * the client sees abnormal closure (1006) instead of our intended 1002/
+   * 4406. To deliver the structured close code we echo a safe value (never
+   * the bearer; always drawn from the client's offer set so the client's
+   * subprotocol validation accepts it) and then close.
+   *
+   * When the client offered nothing echoable (e.g. bearer-only), there's no
+   * safe echo. We drop the socket; the client observes 1006 / disconnect,
+   * which is acceptable for the pathological cases that hit this branch.
+   */
+  const handshakeAndClose = (
+    req: IncomingMessage,
+    socket: Duplex,
+    head: Buffer,
+    code: number,
+    reasonText: string,
+    echoProtocol: string | null,
+  ): void => {
+    if (echoProtocol !== null) {
+      req.headers['sec-websocket-protocol'] = echoProtocol
+    } else {
+      // Clear via undefined assignment (biome noDelete rule); ws reads the
+      // header key, so undefined is treated as "absent".
+      req.headers['sec-websocket-protocol'] = undefined
+    }
+    try {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        try {
+          ws.close(code, reasonText)
+        } catch {
+          try {
+            ws.terminate()
+          } catch {
+            // ignore
+          }
+        }
+      })
+    } catch {
+      // If ws rejected the handshake (e.g. bad Sec-WebSocket-Key), drop the
+      // socket. The client observes a socket-level disconnect.
+      try {
+        socket.destroy()
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /**
+   * Pick a subprotocol to echo on a failure-close path. Rules:
+   *   - Never the bearer-prefixed entry.
+   *   - Prefer any versioned offer (matches /^redesigner-v\d+$/).
+   *   - Fall back to any other client-offered entry (still not the bearer).
+   *   - Return null if nothing safe is available; caller drops the socket.
+   */
+  const pickSafeEchoProtocol = (entries: readonly string[]): string | null => {
+    for (const e of entries) {
+      if (/^redesigner-v\d+$/.test(e)) return e
+    }
+    for (const e of entries) {
+      if (!e.startsWith('base64url.bearer.authorization.')) return e
+    }
+    return null
+  }
+
   const handleUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
     const rawUrl = req.url ?? '/'
     let url: URL
@@ -73,6 +205,19 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
     }
     if (url.pathname !== '/events') {
       socket.destroy()
+      return
+    }
+
+    // 0. RFC 6455 §4.1: Sec-WebSocket-Version MUST be 13. Any other value → 426
+    //    Upgrade Required with a Sec-WebSocket-Version response header advertising
+    //    the server's supported version. This runs BEFORE host/origin so a stale
+    //    or misconfigured client gets the definitive "upgrade your client" signal.
+    const wsVersion = req.headers['sec-websocket-version']
+    if (wsVersion !== '13') {
+      opts.logger.warn('[ws] unsupported Sec-WebSocket-Version', {
+        got: typeof wsVersion === 'string' ? wsVersion : null,
+      })
+      writeHttpReject(socket, 426, 'Upgrade Required', { 'Sec-WebSocket-Version': '13' })
       return
     }
 
@@ -101,20 +246,85 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
       return
     }
 
-    // 4. Token validation (normalized timingSafeEqual via compareToken).
-    const provided = extractBearer(req)
-    if (!compareToken(provided, opts.expectedToken)) {
-      writeHttpReject(socket, 401, 'Unauthorized')
+    // 4. Subprotocol parse + version negotiation + auth.
+    //
+    //    Past this point, the request has cleared pre-handshake gating (valid
+    //    WS version, host, origin, rate). Any further rejection goes as a
+    //    WebSocket close frame (post-handshake), not an HTTP status — giving
+    //    a uniform client-observed behavior and avoiding auth-oracle leaks.
+    const subproto = extractSubprotocolToken(req)
+
+    // 4a. Too many subprotocol entries → 1002 protocol error. We still
+    //     complete the handshake (echoing a safe, non-bearer entry from the
+    //     client's own offer so their ws-client accepts the subprotocol ack)
+    //     so the client receives the structured close code.
+    if (subproto.tooMany) {
+      opts.logger.warn('[ws] subprotocol entries exceeded cap', {
+        count: subproto.entries.length,
+      })
+      const echo = pickSafeEchoProtocol(subproto.entries)
+      handshakeAndClose(req, socket, head, 1002, 'protocol error', echo)
       return
     }
 
-    // 5. ?since= parse.
+    // 4b. No versioned offer at all (bearer-only or no redesigner-v*). No
+    //     safe non-bearer entry to echo → drop the socket (client sees 1006).
+    //     This is the one pathological case where we can't deliver a code.
+    if (subproto.versionedOffers.length === 0) {
+      opts.logger.warn('[ws] no redesigner-v* subprotocol offered')
+      const echo = pickSafeEchoProtocol(subproto.entries)
+      handshakeAndClose(req, socket, head, 1002, 'protocol error', echo)
+      return
+    }
+
+    // 4c. Version negotiation: intersect subprotocol versions with optional
+    //     ?v= constraint, then intersect with server-supported versions.
+    const subprotoVersions = parseSubprotocolVersions(subproto.versionedOffers)
+    const qVersions = parseQueryVersions(url.searchParams.get('v'))
+    let candidate = subprotoVersions
+    if (qVersions !== null) {
+      const set = new Set(qVersions)
+      candidate = candidate.filter((v) => set.has(v))
+    }
+    const supportedSet = new Set(SUPPORTED_WS_VERSIONS)
+    const accepted = candidate.filter((v) => supportedSet.has(v))
+    if (accepted.length === 0) {
+      opts.logger.warn('[ws] version negotiation failed', {
+        subproto: subprotoVersions,
+        q: qVersions,
+      })
+      const reason = encodeCloseReason({ accepted: [...SUPPORTED_WS_VERSIONS] })
+      // Echo the client's first versioned offer so their ws-client accepts
+      // the subprotocol ack and processes the 4406 close frame.
+      const echo = subproto.versionedOffers[0] ?? null
+      handshakeAndClose(req, socket, head, 4406, reason, echo)
+      return
+    }
+    // candidate (and thus accepted) is desc-sorted; length > 0 checked above.
+    const negotiatedV = accepted[0] as number
+    const chosenSubproto = `redesigner-v${negotiatedV}`
+
+    // 4d. Bearer auth — prefer subprotocol bearer (browser shape), fall back
+    //     to Authorization header (native clients). Uniform 1002 on failure.
+    const providedBearer = subproto.bearer ?? extractBearer(req)
+    if (!compareToken(providedBearer, opts.expectedToken)) {
+      opts.logger.warn('[ws] token mismatch; closing 1002')
+      handshakeAndClose(req, socket, head, 1002, 'protocol error', chosenSubproto)
+      return
+    }
+
+    // 5. ?since= parse. Invalid → 1002 (post-gating).
     const sinceRaw = url.searchParams.get('since')
     const since = sinceRaw === null ? undefined : (parseSince(sinceRaw) ?? 'invalid')
     if (since === 'invalid') {
-      writeHttpReject(socket, 400, 'Bad Request')
+      handshakeAndClose(req, socket, head, 1002, 'protocol error', chosenSubproto)
       return
     }
+
+    // Rewrite the subprotocol header to just the chosen entry so ws's default
+    // selector (first-in-set wins) echoes exactly `redesigner-v<N>` and
+    // nothing else — in particular, never the bearer entry.
+    req.headers['sec-websocket-protocol'] = chosenSubproto
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       // Second concurrent subscriber → close 4409 after handshake (per spec).
@@ -139,6 +349,7 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
           serverVersion: opts.serverVersion,
           instanceId: opts.instanceId,
           snapshotSeq: current,
+          negotiatedV,
           snapshot: {
             current: snap.current,
             recent: snap.recent.slice(0, 10),

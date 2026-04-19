@@ -110,7 +110,7 @@ describe('daemon endToEnd — fork + ready + REST + WS + graceful shutdown', () 
 
     // ----- 4. Open WS BEFORE posting selection so we can observe the updated frame.
     const frames: unknown[] = []
-    const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events?since=0`, {
+    const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events?since=0`, ['redesigner-v1'], {
       headers: {
         Host: `127.0.0.1:${h.port}`,
         Authorization: h.authHeader,

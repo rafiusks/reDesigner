@@ -122,7 +122,7 @@ async function connectMockExt(h: DaemonHarness): Promise<MockExt> {
   const requests: RpcRequestFrame[] = []
   const waiters: Array<(f: RpcRequestFrame) => void> = []
 
-  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events`, {
+  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events`, ['redesigner-v1'], {
     headers: {
       Host: `127.0.0.1:${h.port}`,
       // Origin must either be absent or match the chrome-extension://… allowlist;

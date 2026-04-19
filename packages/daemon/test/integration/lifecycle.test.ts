@@ -102,7 +102,7 @@ function exitWithin(
 
 /** Open a WS client against a running harness, await hello. */
 async function openWs(h: DaemonHarness): Promise<WebSocket> {
-  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events?since=0`, {
+  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events?since=0`, ['redesigner-v1'], {
     headers: {
       Host: `127.0.0.1:${h.port}`,
       Authorization: h.authHeader,

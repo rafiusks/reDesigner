@@ -7,8 +7,8 @@
  *   1. Connect → disconnect → reconnect `?since=currentSeq` → hello only.
  *   2. Disconnect → daemon publishes > RING_CAP events → reconnect `?since=0`
  *      → hello + resync.gap frame (client must drop state + rebuild).
- *   3. Malformed `?since=` (`-5`, `abc`, overflow) → 400 at the HTTP upgrade
- *      level BEFORE the WS handshake completes (raw http.request verifies this).
+ *   3. Malformed `?since=` (`-5`, `abc`, overflow) → post-handshake close 1002
+ *      (uniform-close shape per v1 WS wire).
  *   4. Second concurrent subscriber → close 4409 (spec: one subscriber per
  *      daemon).
  *   5. Parameterized `test.each` across boundary values of `?since=` vs the
@@ -27,11 +27,11 @@
  * ---------------------------------------------------------------------------
  * API mismatches vs task description (actual code is the authority):
  *
- *   - Task says malformed `?since=` returns "400 with problem+json body".
- *     The actual `writeHttpReject` in src/ws/events.ts writes only:
- *         HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n
- *     No Content-Type, no body. Test asserts 400 status + connection close at
- *     the HTTP layer; does NOT assert a problem+json body (would fail).
+ *   - Task originally said malformed `?since=` returns "400 with problem+json
+ *     body". Superseded by the v1 WS wire (Task 8): uniform-close semantics,
+ *     so malformed `?since=` now produces a post-handshake close 1002
+ *     (alongside bearer/auth/subprotocol failures). Test asserts the close
+ *     code, not an HTTP status.
  *
  *   - Task scenario 5 expects boundaries
  *     {0, currentSeq, currentSeq-1023, currentSeq-1024} to produce
@@ -61,7 +61,6 @@
  */
 
 import fs from 'node:fs'
-import http from 'node:http'
 import type { ComponentHandle } from '@redesigner/core'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
@@ -108,7 +107,7 @@ interface WsClient {
 
 function openClient(h: DaemonHarness, sinceQS?: string): WsClient {
   const qs = sinceQS === undefined ? '' : `?${sinceQS}`
-  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events${qs}`, {
+  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events${qs}`, ['redesigner-v1'], {
     headers: {
       Host: `127.0.0.1:${h.port}`,
       Authorization: h.authHeader,
@@ -307,71 +306,46 @@ async function closeAndPace(client: WsClient): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Raw HTTP upgrade for malformed-since pre-handshake test.
+// Post-handshake close observation for malformed-since test.
 // ---------------------------------------------------------------------------
 
 /**
- * Issue a raw HTTP Upgrade request with `?since=<sinceRaw>`. Returns the
- * response status line + headers as seen on the socket, WITHOUT completing
- * the WS handshake. Used to verify the daemon returns 400 at the HTTP layer.
+ * Attempt a WS upgrade with `?since=<sinceRaw>` offering the `redesigner-v1`
+ * subprotocol, and resolve with the close code + reason once the connection
+ * terminates. Used to verify the daemon closes 1002 post-handshake for
+ * malformed ?since values (the pre-handshake HTTP 400 behavior was dropped
+ * with the v1 wire — uniform 1002 close surfaces instead).
  */
-function rawUpgrade(
+function attemptWsWithSince(
   h: DaemonHarness,
   sinceRaw: string,
-): Promise<{ status: number; headers: Record<string, string>; body: string }> {
-  return new Promise((resolve, reject) => {
-    const req = http.request({
-      host: '127.0.0.1',
-      port: h.port,
-      path: `/events?since=${sinceRaw}`,
-      method: 'GET',
-      headers: {
-        Host: `127.0.0.1:${h.port}`,
-        Authorization: h.authHeader,
-        Upgrade: 'websocket',
-        Connection: 'Upgrade',
-        'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
-        'Sec-WebSocket-Version': '13',
+): Promise<{ closeCode: number; closeReason: string; opened: boolean }> {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${h.port}/events?since=${sinceRaw}`,
+      ['redesigner-v1'],
+      {
+        headers: {
+          Host: `127.0.0.1:${h.port}`,
+          Authorization: h.authHeader,
+        },
       },
-      timeout: FETCH_TIMEOUT_MS,
+    )
+    let opened = false
+    let settled = false
+    const finalize = (closeCode: number, closeReason: string): void => {
+      if (settled) return
+      settled = true
+      resolve({ closeCode, closeReason, opened })
+    }
+    ws.once('open', () => {
+      opened = true
     })
-    // If the server accepts the upgrade, we would see 'upgrade'. We want to
-    // see 'response' with a 4xx status.
-    req.on('response', (res) => {
-      const chunks: Buffer[] = []
-      res.on('data', (c: Buffer) => chunks.push(c))
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8')
-        const headers: Record<string, string> = {}
-        for (const [k, v] of Object.entries(res.headers)) {
-          headers[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : (v ?? '')
-        }
-        resolve({ status: res.statusCode ?? 0, headers, body })
-      })
-      res.on('error', reject)
+    ws.once('close', (code, reason) => finalize(code, reason.toString('utf8')))
+    ws.once('error', () => {
+      // 'close' will follow unless it's a pre-handshake abort.
     })
-    req.on('upgrade', (_res, socket, _head) => {
-      try {
-        socket.destroy()
-      } catch {
-        // ignore
-      }
-      reject(new Error('daemon accepted upgrade for malformed ?since='))
-    })
-    req.on('error', (err) => {
-      // Server may simply destroy the socket after writing the reject; that
-      // can surface as ECONNRESET AFTER the response is parsed. In that case
-      // 'response' has already fired; here we surface true errors only.
-      reject(err)
-    })
-    req.on('timeout', () => {
-      try {
-        req.destroy(new Error('request timeout'))
-      } catch {
-        // ignore
-      }
-    })
-    req.end()
+    ws.once('unexpected-response', (_, res) => finalize(res.statusCode ?? 0, 'http-response'))
   })
 }
 
@@ -489,23 +463,22 @@ describe('daemon resync — WS /events?since=N reconnection semantics', () => {
   }, 30_000)
 
   // -------------------------------------------------------------------------
-  // 3. Malformed ?since → 400 pre-handshake at the HTTP layer (no WS close).
+  // 3. Malformed ?since → post-handshake close 1002 (uniform-close shape per
+  //    v1 WS wire; previously an HTTP 400 before handshake). Handshake
+  //    completes so the structured close code reaches the client.
   // -------------------------------------------------------------------------
-  describe('malformed ?since returns HTTP 400 before WS handshake', () => {
+  describe('malformed ?since produces post-handshake close 1002', () => {
     const cases = [
       { label: 'negative', raw: '-5' },
       { label: 'non-numeric', raw: 'abc' },
       { label: 'overflow (>16 digits)', raw: '99999999999999999999' },
     ]
-    it.each(cases)('?since=$label → 400', async ({ raw }) => {
+    it.each(cases)('?since=$label → close 1002', async ({ raw }) => {
       const h = await spawnDaemon({ tempDirPrefix: 'redesigner-resync-bad-since-' })
       harnesses.push(h)
 
-      const result = await rawUpgrade(h, raw)
-      expect(result.status).toBe(400)
-      // Actual daemon writes `Connection: close` header; no problem+json body
-      // (see header comment re API mismatch vs task spec).
-      expect(result.headers.connection).toBe('close')
+      const result = await attemptWsWithSince(h, raw)
+      expect(result.closeCode).toBe(1002)
     })
   })
 

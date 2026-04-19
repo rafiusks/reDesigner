@@ -99,7 +99,7 @@ interface FrameCollector {
 
 async function openWsAndAwaitHello(h: DaemonHarness): Promise<FrameCollector> {
   const frames: Array<{ type: string; seq?: number; payload?: unknown }> = []
-  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events?since=0`, {
+  const ws = new WebSocket(`ws://127.0.0.1:${h.port}/events?since=0`, ['redesigner-v1'], {
     headers: {
       Host: `127.0.0.1:${h.port}`,
       Authorization: h.authHeader,
