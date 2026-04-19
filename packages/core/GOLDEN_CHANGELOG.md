@@ -1,0 +1,1 @@
+- 2026-04-20 — initial goldens for handshake.json + exchange + PUT /selection schemas (Task 4 of chrome-extension-v0 plan).

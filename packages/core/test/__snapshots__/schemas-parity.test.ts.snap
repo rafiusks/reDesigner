@@ -1,0 +1,215 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ExchangeRequestSchema JSON Schema matches committed golden 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "bootstrapToken": {
+      "minLength": 1,
+      "type": "string",
+    },
+    "clientNonce": {
+      "minLength": 16,
+      "type": "string",
+    },
+  },
+  "required": [
+    "clientNonce",
+    "bootstrapToken",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`ExchangeResponseSchema JSON Schema matches committed golden 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "exp": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer",
+    },
+    "serverNonce": {
+      "minLength": 16,
+      "type": "string",
+    },
+    "sessionToken": {
+      "minLength": 1,
+      "type": "string",
+    },
+  },
+  "required": [
+    "sessionToken",
+    "exp",
+    "serverNonce",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`HandshakeSchema JSON Schema matches committed golden 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "bootstrapToken": {
+      "minLength": 1,
+      "type": "string",
+    },
+    "daemonVersion": {
+      "minLength": 1,
+      "type": "string",
+    },
+    "editor": {
+      "enum": [
+        "cursor",
+        "vscode",
+        "webstorm",
+        "zed",
+      ],
+      "type": "string",
+    },
+    "httpUrl": {
+      "format": "uri",
+      "type": "string",
+    },
+    "pluginVersion": {
+      "minLength": 1,
+      "type": "string",
+    },
+    "wsUrl": {
+      "format": "uri",
+      "type": "string",
+    },
+  },
+  "required": [
+    "wsUrl",
+    "httpUrl",
+    "bootstrapToken",
+    "editor",
+    "pluginVersion",
+    "daemonVersion",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`SelectionPutBodySchema JSON Schema matches committed golden 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "clientId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string",
+    },
+    "meta": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "picker",
+            "mcp",
+            "dev",
+          ],
+          "type": "string",
+        },
+      },
+      "type": "object",
+    },
+    "nodes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "componentName": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string",
+          },
+          "domPath": {
+            "maxLength": 8192,
+            "type": "string",
+          },
+          "filePath": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "type": "string",
+          },
+          "lineRange": {
+            "prefixItems": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer",
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer",
+              },
+            ],
+            "type": "array",
+          },
+          "parentChain": {
+            "items": {
+              "maxLength": 256,
+              "type": "string",
+            },
+            "maxItems": 64,
+            "type": "array",
+          },
+          "timestamp": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+        },
+        "required": [
+          "id",
+          "componentName",
+          "filePath",
+          "lineRange",
+          "domPath",
+          "parentChain",
+          "timestamp",
+        ],
+        "type": "object",
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array",
+    },
+  },
+  "required": [
+    "nodes",
+    "clientId",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`SelectionPutResponseSchema JSON Schema matches committed golden 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "acceptedAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer",
+    },
+    "selectionSeq": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer",
+    },
+  },
+  "required": [
+    "selectionSeq",
+    "acceptedAt",
+  ],
+  "type": "object",
+}
+`;
