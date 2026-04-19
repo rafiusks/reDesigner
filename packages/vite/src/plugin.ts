@@ -3,7 +3,7 @@ import path from 'node:path'
 import { transformAsync } from '@babel/core'
 import type { Plugin, ResolvedConfig } from 'vite'
 import { redesignerBabelPlugin } from './babel/plugin'
-import { rejectEscapingPath, toPosixProjectRoot, toPosixRelative } from './core/pathGuards'
+import { rejectEscapingPath, toPosixRelative } from './core/pathGuards'
 import type { Logger, PerFileBatch } from './core/types-internal'
 import type { RedesignerOptions } from './core/types-public'
 import { DaemonBridge } from './integration/daemonBridge'
@@ -68,12 +68,15 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         return
       }
 
-      const projectRoot = toPosixProjectRoot(config.root)
-      const manifestPath = path.posix.resolve(
+      // Paths used for filesystem ops must stay native so Windows drive letters
+      // are handled correctly. toPosixRelative handles posix conversion per-call
+      // when computing manifest keys.
+      const projectRoot = path.resolve(config.root)
+      const manifestPath = path.resolve(
         projectRoot,
         options.manifestPath ?? '.redesigner/manifest.json',
       )
-      rejectEscapingPath(path.posix.relative(projectRoot, manifestPath), projectRoot)
+      rejectEscapingPath(path.relative(projectRoot, manifestPath), projectRoot)
 
       const tsconfig = loadTsconfig(config.root)
       const tsconfigTyped = tsconfig as { compilerOptions?: { jsx?: string } } | undefined
