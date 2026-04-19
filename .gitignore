@@ -11,6 +11,7 @@ pnpm-debug.log
 # Local session state for Claude Code tooling
 .remember/
 .claude/settings.local.json
+.superpowers/
 
 .husky/_
 *.tsbuildinfo
