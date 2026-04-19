@@ -17,8 +17,13 @@ export function rejectEscapingPath(relOrAbs: string, projectRoot: string): void 
   if (path.isAbsolute(relOrAbs)) {
     throw new Error(`[redesigner] path must be relative to projectRoot, got absolute: ${relOrAbs}`)
   }
-  const resolved = path.posix.resolve(toPosixProjectRoot(projectRoot), relOrAbs)
-  const rootPosix = toPosixProjectRoot(projectRoot)
+  // Use native path.resolve so Windows drive letters (D:\...) are recognized
+  // as absolute; path.posix.resolve treats them as relative and prepends cwd,
+  // breaking the prefix check.
+  const resolvedNative = path.resolve(projectRoot, relOrAbs)
+  const rootNative = path.resolve(projectRoot)
+  const resolved = toPosixProjectRoot(resolvedNative)
+  const rootPosix = toPosixProjectRoot(rootNative)
   if (!resolved.startsWith(`${rootPosix}/`) && resolved !== rootPosix) {
     throw new Error(`[redesigner] path escapes projectRoot: ${relOrAbs}`)
   }
