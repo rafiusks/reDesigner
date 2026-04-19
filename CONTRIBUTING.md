@@ -2,7 +2,7 @@
 
 ## Environment
 
-1. Node ≥ 20.11.0. (We pin exactly `20.11.0` for the CI floor; Node 22 for current LTS.)
+1. Node ≥ 20.19.0. (We pin exactly `20.19.0` for the CI floor — earliest 20.x that satisfies `@vitejs/plugin-react@5`'s `^20.19.0 || >=22.12.0` engines constraint; Node 22 for current LTS.)
 2. Enable Corepack: `corepack enable`. Corepack must be ≥ 0.31.0 (npm rotated signing keys in early 2025; older Corepack fails signature verification on modern pnpm releases). If `corepack --version` reports `0.30` or below, run `npm install -g corepack@latest`.
 3. Behind a corporate proxy with MITM: set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` and, if signature verification still fails, `COREPACK_NPM_REGISTRY=https://your-mirror`.
 4. `pnpm install`.
