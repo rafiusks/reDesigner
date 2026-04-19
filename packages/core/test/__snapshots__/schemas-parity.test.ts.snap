@@ -1,4 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+// Source: packages/core/src/schemas/handshake.ts + selection.ts
 
 exports[`ExchangeRequestSchema JSON Schema matches committed golden 1`] = `
 {
