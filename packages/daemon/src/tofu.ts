@@ -10,6 +10,7 @@
  * ancestor-safety rationale; we reuse the same parent directory.
  */
 
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -24,7 +25,8 @@ export function readTrustedExtId(trustedPath: string): string | null {
   } catch {
     return null
   }
-  if (!st.isFile() || st.isSymbolicLink()) return null
+  // lstatSync on a symlink yields isFile()===false, so this also rejects symlinks.
+  if (!st.isFile()) return null
   if (process.platform !== 'win32') {
     // Reject if group/other bits are set — treat as tampered.
     if ((st.mode & 0o077) !== 0) return null
@@ -52,7 +54,7 @@ export function writeTrustedExtId(trustedPath: string, extId: string): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
 
   // Write to a sibling temp file then rename for atomicity.
-  const tmp = `${trustedPath}.tmp-${process.pid}-${Date.now()}`
+  const tmp = `${trustedPath}.tmp-${process.pid}-${crypto.randomBytes(8).toString('hex')}`
   const fd = fs.openSync(tmp, 'w', 0o600)
   try {
     const buf = Buffer.from(`${extId}\n`, 'utf8')

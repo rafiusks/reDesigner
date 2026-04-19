@@ -57,7 +57,16 @@ export function resolveHandoffPath(projectRoot: string): string {
  * Lives in the same per-project runtime directory as the handoff file.
  */
 export function resolveTrustedExtIdPath(projectRoot: string): string {
-  const real = fs.realpathSync(projectRoot)
+  let real: string
+  try {
+    real = fs.realpathSync(projectRoot)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      real = path.resolve(projectRoot)
+    } else {
+      throw err
+    }
+  }
   const projectHash = crypto.createHash('sha256').update(real).digest('hex').slice(0, 16)
   const { root } = getRuntimeRoot()
   return path.join(root, projectHash, 'trusted-ext-id')

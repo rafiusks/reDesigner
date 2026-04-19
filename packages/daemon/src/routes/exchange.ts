@@ -155,6 +155,7 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
   }
 
   function resetFailedBucket(key: string): void {
+    failedBuckets.delete(key)
     failedBuckets.set(
       key,
       createTokenBucket({
@@ -333,15 +334,15 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
 
     // Gate 6: TOFU decision (uses pre-add bootWindowOrigins snapshot).
     const decision = evaluateTofu(extId)
-    // Post-decision: now record this origin in the boot window set so a THIRD
-    // distinct origin (which would arrive as size=2 at decision time) fails
-    // auto-reset even if still inside the 10s window.
-    if (isWithinBootWindow()) {
-      bootWindowOrigins.add(originVal)
-    }
     if (!decision.allow) {
       forbidUnknownExtension(res, 'extension not trusted for this project', reqId)
       return
+    }
+    // Post-decision: only successful exchanges count toward "origins connected".
+    // Record now so a THIRD distinct origin (size=2 at decision time) fails
+    // auto-reset even if still inside the 10s window.
+    if (isWithinBootWindow()) {
+      bootWindowOrigins.add(originVal)
     }
 
     // Mint session.
@@ -357,6 +358,8 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     }
     activeSessions.set(extId, Buffer.from(sessionToken, 'utf8'))
     consumedNonces.add(nonceKey)
+    // Bound replay-cache memory. Bootstrap rotation (future) will flush this organically.
+    if (consumedNonces.size > 10_000) consumedNonces.clear()
 
     // Successful exchange: refund by resetting the bucket for this key.
     // Spec: only FAILED exchanges count. rateLimit.ts has no un-consume API,

@@ -203,7 +203,7 @@ describe('createExchangeRoute — successful exchange', () => {
   it('mints sessionToken = HMAC(rootToken, clientNonce || serverNonce || iat)', async () => {
     const iatMs = 1_700_000_000_000
     const iat = Math.floor(iatMs / 1000)
-    harness.close.call(null) // discard old harness — rebuild with injected now
+    await harness.close() // discard old harness — rebuild with injected now
     harness = await mountHandler({
       rootToken,
       projectRoot,
