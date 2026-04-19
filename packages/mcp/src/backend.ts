@@ -80,53 +80,21 @@ export class FileBackend implements Backend {
     current: ComponentHandle | null
     history: ComponentHandle[]
   }> {
-    let statResult: Awaited<ReturnType<typeof stat>>
-    try {
-      statResult = await stat(this.opts.selectionPath)
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        return { current: null, history: [] }
-      }
-      throw toMcpError(err, 'reading .redesigner/selection.json')
-    }
-    if (statResult.size > SELECTION_SIZE_LIMIT) {
-      throw toMcpError(
-        new FileTooLargeError(SELECTION_SIZE_LIMIT, statResult.size),
-        'reading .redesigner/selection.json',
-      )
-    }
-
-    if (
-      this.selectionCache &&
-      this.selectionCache.mtimeMs === statResult.mtimeMs &&
-      this.selectionCache.expiresAt > Date.now()
-    ) {
-      return this.selectionCache.data
-    }
-
-    let raw: string
-    try {
-      raw = await readFile(this.opts.selectionPath, 'utf8')
-    } catch (err) {
-      throw toMcpError(err, 'reading .redesigner/selection.json')
-    }
-
-    let obj: unknown
-    try {
-      obj = safeJsonParse(raw)
-    } catch (err) {
-      throw toMcpError(err, 'reading .redesigner/selection.json')
-    }
-
-    const parsed = SelectionFileSchema.safeParse(obj)
-    if (!parsed.success) throw toMcpError(parsed.error, 'reading .redesigner/selection.json')
-
-    this.selectionCache = {
-      data: parsed.data,
-      mtimeMs: statResult.mtimeMs,
-      expiresAt: Date.now() + CACHE_TTL_MS,
-    }
-    return parsed.data
+    return this.readCached(
+      this.opts.selectionPath,
+      'reading .redesigner/selection.json',
+      SELECTION_SIZE_LIMIT,
+      (obj) => {
+        const parsed = SelectionFileSchema.safeParse(obj)
+        if (!parsed.success) throw parsed.error
+        return parsed.data
+      },
+      (entry) => {
+        this.selectionCache = entry
+      },
+      () => this.selectionCache,
+      () => ({ current: null, history: [] }),
+    )
   }
 
   private async readCached<T>(
@@ -136,11 +104,15 @@ export class FileBackend implements Backend {
     validate: (obj: unknown) => T,
     setCache: (entry: CacheEntry<T>) => void,
     getCache: () => CacheEntry<T> | null,
+    defaultOnMissing?: () => T,
   ): Promise<T> {
     let statResult: Awaited<ReturnType<typeof stat>>
     try {
       statResult = await stat(filePath)
     } catch (err) {
+      if (defaultOnMissing && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return defaultOnMissing()
+      }
       throw toMcpError(err, context)
     }
     if (statResult.size > limit) {

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { safeJsonParse } from './safeJsonParse'
 import type { Manifest } from './types'
 
 export const SUPPORTED_MAJOR = 1
@@ -30,7 +31,7 @@ export async function readManifest(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const raw = await readFile(manifestPath, 'utf8')
-      const parsed = JSON.parse(raw) as Manifest
+      const parsed = safeJsonParse(raw) as Manifest
       const major = parseMajor(parsed.schemaVersion)
       if (major !== expectedMajor) {
         throw new Error(
