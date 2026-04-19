@@ -16,7 +16,7 @@ export interface Backend {
   getDomSubtree(selectionId: string, depth: number): Promise<unknown | null>
 }
 
-interface FileBackendOptions {
+export interface FileBackendOptions {
   projectRoot: string
   manifestPath: string
   selectionPath: string
@@ -39,7 +39,7 @@ export class FileBackend implements Backend {
     history: ComponentHandle[]
   }> | null = null
 
-  constructor(private readonly opts: FileBackendOptions) {}
+  constructor(protected readonly opts: FileBackendOptions) {}
 
   async getManifest(): Promise<Manifest> {
     return this.readCached(
