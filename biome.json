@@ -23,7 +23,8 @@
       "**/dist/**",
       "**/.redesigner/**",
       "**/test/fixtures/**/output.tsx",
-      "**/test/fixtures/**/expected-manifest.json"
+      "**/test/fixtures/**/expected-manifest.json",
+      "**/test/snapshots/**"
     ]
   }
 }

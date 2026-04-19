@@ -14,7 +14,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:update-snapshot": "vitest run -u",
+    "test:update-snapshot": "UPDATE_SNAPSHOT=1 vitest run schema-snapshot",
     "lint": "biome check ."
   },
   "dependencies": {
