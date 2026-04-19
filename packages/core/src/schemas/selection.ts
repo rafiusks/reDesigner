@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { ComponentHandleSchema } from '../schema'
-
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+import { UUID_V4_RE } from './primitives'
 
 /**
  * `PUT /tabs/{tabId}/selection` request body.
@@ -14,7 +13,7 @@ export const SelectionPutBodySchema = z
     clientId: z.string().regex(UUID_V4_RE, 'clientId must be a UUIDv4 string'),
     meta: z
       .object({
-        source: z.enum(['picker', 'mcp', 'dev']).optional(),
+        source: z.enum(['picker', 'mcp', 'dev']),
       })
       .strict()
       .optional(),

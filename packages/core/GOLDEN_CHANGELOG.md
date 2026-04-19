@@ -1,1 +1,2 @@
 - 2026-04-20 — initial goldens for handshake.json + exchange + PUT /selection schemas (Task 4 of chrome-extension-v0 plan).
+- 2026-04-20 — meta.source required when meta present (Task 4 review fix).

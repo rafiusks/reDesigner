@@ -1,6 +1,5 @@
 import { z } from 'zod'
-
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+import { UUID_V4_RE } from './primitives'
 
 /** JSON-RPC 2.0 error object (§5). */
 export const JsonRpcErrorSchema = z
