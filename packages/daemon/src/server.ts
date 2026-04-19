@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import { UNAUTHORIZED_HEADERS, compareToken, extractBearer } from './auth.js'
+import { hostAllow } from './hostAllow.js'
 import { type TokenBucket, createTokenBucket } from './rateLimit.js'
 import { handleBrowserToolPost } from './routes/browserTools.js'
 import { handleHealthGet } from './routes/health.js'
@@ -14,9 +15,6 @@ import { handleShutdownPost } from './routes/shutdown.js'
 import { problem, sendProblem } from './types.js'
 import type { RouteContext } from './types.js'
 import { attachEvents } from './ws/events.js'
-
-// Strict loopback-literal Host check (§5 middleware #1). Blocks DNS-rebind + IP-literal variants.
-const HOST_RE = /^127\.0\.0\.1:\d{1,5}$/
 
 export interface ServerOptions {
   port: number
@@ -36,6 +34,7 @@ export function createDaemonServer(opts: ServerOptions): {
   const domSubtreeBucket = createTokenBucket({ ratePerSec: 5, burst: 5 })
 
   const serverHeader = `@redesigner/daemon/${opts.ctx.serverVersion}`
+  const isAllowedHost = hostAllow(opts.port)
 
   const server = http.createServer((req, res) => {
     // Fire-and-forget; any unhandled rejection is caught inside.
@@ -46,16 +45,18 @@ export function createDaemonServer(opts: ServerOptions): {
     const reqId = crypto.randomUUID()
     res.setHeader('Server', serverHeader)
 
-    // 1. Host allowlist — strict 127.0.0.1:<exactPort>. Pre-auth (cheap; deflects browser probes).
-    const expectedHost = `127.0.0.1:${opts.port}`
+    // 1. Host allowlist — literal set { localhost, 127.0.0.1, [::1] } at the daemon's port.
+    //    Broader than 127.0.0.1-only (prior) so extensions that resolve localhost get through,
+    //    while DNS-rebind suffixes and non-loopback IPs are still rejected.
+    //    Per spec §3.2 mismatch returns 421 Misdirected Request (not 400).
     const host = req.headers.host
-    if (typeof host !== 'string' || !HOST_RE.test(host) || host !== expectedHost) {
+    if (!isAllowedHost(host)) {
       sendProblem(
         res,
         problem(
-          400,
+          421,
           'HostRejected',
-          `Host must be exactly ${expectedHost}; got ${host ?? ''}`,
+          `Host must be one of localhost:${opts.port}, 127.0.0.1:${opts.port}, [::1]:${opts.port}; got ${host ?? ''}`,
           reqId,
         ),
       )

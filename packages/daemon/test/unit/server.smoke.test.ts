@@ -97,18 +97,20 @@ describe('createDaemonServer smoke', () => {
     expect(res.headers.get('server')).toBe('@redesigner/daemon/0.0.1')
   })
 
-  it('returns 400 HostRejected when Host header is an attacker domain', async () => {
+  it('returns 421 HostRejected when Host header is an attacker domain', async () => {
     // Use raw http so we can set Host freely.
     const body = await rawGet(handle.port, '/health', { Host: 'attacker.com' })
-    expect(body.status).toBe(400)
+    expect(body.status).toBe(421)
     const parsed = JSON.parse(body.body)
     expect(parsed.code).toBe('HostRejected')
     expect(body.headers.server).toBe('@redesigner/daemon/0.0.1')
   })
 
-  it('returns 400 HostRejected when Host is localhost:<port> (not allowlisted)', async () => {
-    const body = await rawGet(handle.port, '/health', { Host: `localhost:${handle.port}` })
-    expect(body.status).toBe(400)
+  it('returns 421 HostRejected for DNS-rebind suffix trap (localhost.attacker.com)', async () => {
+    const body = await rawGet(handle.port, '/health', {
+      Host: `localhost.attacker.com:${handle.port}`,
+    })
+    expect(body.status).toBe(421)
     const parsed = JSON.parse(body.body)
     expect(parsed.code).toBe('HostRejected')
   })

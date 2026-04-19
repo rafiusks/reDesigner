@@ -213,25 +213,34 @@ describe('Host-header DNS-rebinding defense — integration', () => {
     await handle.close()
   })
 
-  it('returns 400 HostRejected for Host: evil.com', async () => {
+  it('returns 421 HostRejected for Host: evil.com', async () => {
     const res = await rawRequest(handle.port, 'GET', '/health', {
       Host: 'evil.com',
     })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(421)
     const body = JSON.parse(res.body) as Record<string, unknown>
     expect(body.code).toBe('HostRejected')
   })
 
-  it('returns 400 HostRejected for Host: localhost:<port> (not in allowlist)', async () => {
+  it('returns 421 HostRejected for Host: localhost.attacker.com:<port> (DNS-rebind suffix trap)', async () => {
     const res = await rawRequest(handle.port, 'GET', '/health', {
-      Host: `localhost:${handle.port}`,
+      Host: `localhost.attacker.com:${handle.port}`,
     })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(421)
     const body = JSON.parse(res.body) as Record<string, unknown>
     expect(body.code).toBe('HostRejected')
   })
 
-  it('accepts request with exact Host: 127.0.0.1:<port>', async () => {
+  it('returns 421 HostRejected for Host with port mismatch', async () => {
+    const res = await rawRequest(handle.port, 'GET', '/health', {
+      Host: `127.0.0.1:${handle.port + 1}`,
+    })
+    expect(res.status).toBe(421)
+    const body = JSON.parse(res.body) as Record<string, unknown>
+    expect(body.code).toBe('HostRejected')
+  })
+
+  it('accepts request with Host: 127.0.0.1:<port>', async () => {
     const res = await rawRequest(handle.port, 'GET', '/health', {
       Host: `127.0.0.1:${handle.port}`,
       Authorization: `Bearer ${bearer}`,
@@ -240,7 +249,23 @@ describe('Host-header DNS-rebinding defense — integration', () => {
     expect(res.status).toBe(200)
   })
 
-  it('returns 400 HostRejected when Host is absent', async () => {
+  it('accepts request with Host: localhost:<port> (now in literal allowlist)', async () => {
+    const res = await rawRequest(handle.port, 'GET', '/health', {
+      Host: `localhost:${handle.port}`,
+      Authorization: `Bearer ${bearer}`,
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('accepts request with Host: [::1]:<port> (IPv6 loopback literal)', async () => {
+    const res = await rawRequest(handle.port, 'GET', '/health', {
+      Host: `[::1]:${handle.port}`,
+      Authorization: `Bearer ${bearer}`,
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('returns 421 HostRejected when Host is absent', async () => {
     // Craft a minimal HTTP/1.0 request with no Host header
     const res = await new Promise<{ status: number }>((resolve, reject) => {
       const sock = new net.Socket()
@@ -257,7 +282,7 @@ describe('Host-header DNS-rebinding defense — integration', () => {
       })
       sock.on('error', reject)
     })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(421)
   })
 })
 
