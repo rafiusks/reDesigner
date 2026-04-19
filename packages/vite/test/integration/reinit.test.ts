@@ -45,7 +45,6 @@ import redesigner from '../../src/index'
 const PKG_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..')
 const REACT_DIR = path.join(PKG_ROOT, 'node_modules/react')
 
-// Build a minimal ViteDevServer config.
 function baseServerConfig(
   dir: string,
   manifestPath: string,
@@ -72,7 +71,6 @@ function baseServerConfig(
   }
 }
 
-// Scaffold a minimal tmpdir project.
 function scaffoldProject(prefix: string): string {
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), prefix)))
   mkdirSync(path.join(dir, 'src'), { recursive: true })
@@ -87,18 +85,17 @@ function scaffoldProject(prefix: string): string {
   return dir
 }
 
-// Race server.close() against a 2s ceiling to avoid macOS watcher hang.
+// macOS: FS watchers can keep server.close() pending >10s; cap at 2s.
 async function safeClose(server: ViteDevServer | undefined): Promise<void> {
   if (!server) return
   await Promise.race([server.close(), new Promise<void>((r) => setTimeout(r, 2000))])
 }
 
-// Find the redesigner plugin in a server's resolved plugin list.
 function findRedesignerPlugin(server: ViteDevServer): Plugin | undefined {
   return server.config.plugins.find((p) => p.name === 'redesigner')
 }
 
-// Invoke closeBundle on a plugin (it may be async or wrapped in a Rollup hook object).
+// Rollup normalizes some hooks to { handler } objects; handle both shapes.
 async function invokeCloseBundle(plugin: Plugin): Promise<void> {
   if (typeof plugin.closeBundle === 'function') {
     await (plugin.closeBundle as () => Promise<void>)()
@@ -116,19 +113,14 @@ async function invokeCloseBundle(plugin: Plugin): Promise<void> {
   }
 }
 
-// Read manifest JSON from disk.
 function readManifestSync(p: string): Manifest {
   return JSON.parse(readFileSync(p, 'utf8')) as Manifest
 }
 
-// Snapshot active handle count.
 function activeHandleCount(): number {
   return (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles().length
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Reinit lifecycle test
-// ─────────────────────────────────────────────────────────────────────────────
 describe('reinit: plugin restart lifecycle', () => {
   let dir: string
   let server1: ViteDevServer | undefined
@@ -154,10 +146,8 @@ describe('reinit: plugin restart lifecycle', () => {
   }, 15000)
 
   it('old shutdown fires, new writer is clean, handles stable, no duplicate daemon', async () => {
-    // ─── Capture active handles BEFORE first server starts ───────────────
     const handlesBefore = activeHandleCount()
 
-    // ─── Capture logger output for daemon duplication invariant ──────────
     const warnings1: string[] = []
     const warnings2: string[] = []
 
@@ -173,7 +163,6 @@ describe('reinit: plugin restart lifecycle', () => {
       hasWarned: false,
     })
 
-    // ─── Phase 1: start OLD server ────────────────────────────────────────
     server1 = await createServer({
       ...baseServerConfig(dir, REL_MANIFEST, { customLogger: makeLogger(warnings1) }),
     })
@@ -181,28 +170,21 @@ describe('reinit: plugin restart lifecycle', () => {
     const manifestPath = path.join(dir, REL_MANIFEST)
     const lockPath = `${manifestPath}.owner-lock`
 
-    // Immediately after server1 starts, the manifest and lock must exist.
     expect(existsSync(manifestPath), 'manifest written synchronously on startup').toBe(true)
     expect(existsSync(lockPath), 'owner-lock acquired on startup').toBe(true)
 
-    // Do a transform so server1 has some state (a non-empty flush later distinguishes old
-    // from new). We do this to ensure server1 actually wrote something to its internal
-    // state map before we trigger shutdown.
+    // Seed server1 with non-empty state so the empty-manifest assertion on server2 is load-bearing.
     await server1.transformRequest('/src/App.tsx')
 
-    // ─── Phase 2: simulate restart — trigger old closeBundle ─────────────
     const oldPlugin = findRedesignerPlugin(server1)
     expect(oldPlugin, 'redesigner plugin found in server1').toBeDefined()
     if (!oldPlugin) return
 
     await invokeCloseBundle(oldPlugin)
 
-    // After closeBundle: lock must be released (unlinked by shutdown()).
     expect(existsSync(lockPath), 'owner-lock released after old writer shutdown').toBe(false)
 
-    // Invariant 1: the lock was cleared, meaning a new writer CAN acquire it.
-    // Confirm by probing with openSync wx — this would throw if the lock still existed.
-    // We then close it immediately.
+    // Probe with wx — throws if lock is still held. Release immediately after.
     let probeFd: number | null = null
     try {
       probeFd = openSync(lockPath, 'wx')
@@ -217,14 +199,11 @@ describe('reinit: plugin restart lifecycle', () => {
       }
     }
 
-    // ─── Phase 3: start NEW server (simulates Vite rebuild after config change) ──
-    // This must succeed — if the old lock was still held, ManifestWriter would throw
-    // "two dev servers targeting the same manifestPath".
+    // If the old lock were still held, ManifestWriter would throw 'two dev servers…'.
     server2 = await createServer({
       ...baseServerConfig(dir, REL_MANIFEST, { customLogger: makeLogger(warnings2) }),
     })
 
-    // Invariant 2: new manifest has empty components/locs (fresh ManifestWriter state).
     const newManifest = readManifestSync(manifestPath)
     expect(
       Object.keys(newManifest.components),
@@ -233,7 +212,6 @@ describe('reinit: plugin restart lifecycle', () => {
     expect(Object.keys(newManifest.locs), 'new writer manifest has empty locs').toHaveLength(0)
     expect(newManifest.schemaVersion, 'new manifest has correct schema version').toBe('1.0')
 
-    // ─── Phase 4: teardown server2 gracefully ────────────────────────────
     const newPlugin = findRedesignerPlugin(server2)
     expect(newPlugin, 'redesigner plugin found in server2').toBeDefined()
     if (newPlugin) await invokeCloseBundle(newPlugin)
@@ -244,9 +222,6 @@ describe('reinit: plugin restart lifecycle', () => {
     await safeClose(server1)
     server1 = undefined
 
-    // ─── Invariant 3: handle count stable ────────────────────────────────
-    // Measure AFTER both servers are closed. The count must not grow by ≥2
-    // compared to the pre-first-server baseline.
     const handlesAfter = activeHandleCount()
     const leak = handlesAfter - handlesBefore
     expect(
@@ -254,9 +229,6 @@ describe('reinit: plugin restart lifecycle', () => {
       `Handle leak detected: +${leak} handles. Before=${handlesBefore}, After=${handlesAfter}`,
     ).toBeLessThan(2)
 
-    // ─── Invariant 4: no duplicate daemon ────────────────────────────────
-    // daemon: 'off' means DaemonBridge.start() returns immediately — no warnings expected.
-    // We confirm no start/warning path was triggered twice in either session.
     const allWarnings = [...warnings1, ...warnings2]
     const daemonStartWarnings = allWarnings.filter(
       (w) =>
@@ -264,7 +236,6 @@ describe('reinit: plugin restart lifecycle', () => {
         w.includes('daemon package errored on import') ||
         w.includes('daemon started'),
     )
-    // With daemon: 'off', zero daemon-related warnings should exist.
     expect(daemonStartWarnings, 'no daemon warnings expected when daemon is off').toHaveLength(0)
   }, 30000)
 })

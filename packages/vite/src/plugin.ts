@@ -165,8 +165,10 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
     async closeBundle() {
       if (!client) return
       const logger = makeLogger(config.logger)
-      await client.writer.shutdown()
-      await client.daemon.shutdown({ logger })
+      const c = client
+      client = null
+      await c.writer.shutdown()
+      await c.daemon.shutdown({ logger })
     },
   }
 

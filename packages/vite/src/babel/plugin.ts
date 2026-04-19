@@ -38,9 +38,8 @@ export function redesignerBabelPlugin(opts: RedesignerBabelPluginOpts): PluginOb
   return {
     name: 'redesigner',
     visitor: {
-      JSXFragment() {
-        // Skip: <>…</> cannot accept props. Children visited via default traversal.
-      },
+      // <>…</> cannot accept props; children still visit through default traversal.
+      JSXFragment() {},
       JSXOpeningElement(path: NodePath<t.JSXOpeningElement>) {
         try {
           const name = openingElementName(path.node)

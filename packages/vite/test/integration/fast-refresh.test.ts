@@ -9,7 +9,7 @@ import type { Manifest } from '../../src/core/types-public'
 import redesigner from '../../src/index'
 import { readManifest } from '../../src/reader'
 
-// ─── Task E-7: Fast-Refresh integration (spec §8.3 row `fast-refresh.test.ts`) ───
+// Fast-Refresh integration (spec §8.3).
 //
 // Approach 2 — behavioural proxy.
 //
@@ -53,8 +53,6 @@ import { readManifest } from '../../src/reader'
 // is a separate concern — our assertions key on the plugin-react wrapper output, not
 // the runtime module body.
 
-// Resolve to the packages/vite node_modules for React aliases. Tmpdir projects have
-// no node_modules of their own; we point Vite's resolver at our workspace's copies.
 const PKG_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..')
 const REACT_DIR = path.join(PKG_ROOT, 'node_modules/react')
 const REACT_DOM_DIR = path.join(PKG_ROOT, 'node_modules/react-dom')

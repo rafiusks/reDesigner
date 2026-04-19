@@ -34,7 +34,6 @@ describe('vite integration: DOM tagging + manifest round-trip', () => {
     dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'redesigner-vite-')))
     mkdirSync(path.join(dir, 'src'), { recursive: true })
 
-    // Sample App: two components + module-scope mount
     writeFileSync(
       path.join(dir, 'src/App.tsx'),
       `export function Inner() {
@@ -102,14 +101,10 @@ if (root) createRoot(root).render(<App />)
     expect(result).not.toBeNull()
     if (!result) return
 
-    // After esbuild compiles JSX, data-redesigner-loc becomes an object prop in jsxDEV() call:
-    // jsxDEV("div", { "data-redesigner-loc": "src/App.tsx:2:9", ... })
     const locAttrs = extractLocAttrs(result.code)
 
-    // Elements: <div>, <span>, <section>, <h1>, <Inner /> → 5 attributes
-    // Inner is a user component (capitalized, not in wrapper list) so it IS tagged.
+    // 5 host elements (div, span, section, h1, Inner); Inner is user-authored so it IS tagged.
     expect(locAttrs.length).toBeGreaterThanOrEqual(4)
-    // Each loc must match filePath:line:col format
     for (const loc of locAttrs) {
       expect(loc).toMatch(/^.+\.tsx:\d+:\d+$/)
     }
@@ -120,17 +115,14 @@ if (root) createRoot(root).render(<App />)
     expect(result).not.toBeNull()
     if (!result) return
 
-    // Module-scope JSX (<App />) must NOT have data-redesigner-loc injected
     const locAttrs = extractLocAttrs(result.code)
     expect(locAttrs.length).toBe(0)
   }, 15000)
 
   it('manifest: after transforms, manifest.json exists with expected entries', async () => {
-    // Trigger both transforms
     await server.transformRequest('/src/App.tsx')
     await server.transformRequest('/src/main.tsx')
 
-    // Poll for manifest flush (max 10s)
     const manifestPath = path.join(dir, '.redesigner/manifest.json')
     const deadline = Date.now() + 10000
     while (!existsSync(manifestPath) && Date.now() < deadline) {
@@ -138,7 +130,6 @@ if (root) createRoot(root).render(<App />)
     }
     expect(existsSync(manifestPath)).toBe(true)
 
-    // Wait for at least two component entries (App.tsx transforms produce App + Inner)
     let manifest: Manifest | undefined
     while (Date.now() < deadline) {
       manifest = await readManifest(manifestPath)
@@ -151,10 +142,8 @@ if (root) createRoot(root).render(<App />)
     expect(manifest).toBeDefined()
     if (!manifest) return
     expect(manifest.schemaVersion).toBe('1.0')
-    // App.tsx should have App + Inner components
     const appComponents = Object.keys(manifest.components).filter((k) => k.includes('App.tsx'))
     expect(appComponents.length).toBeGreaterThanOrEqual(2)
-    // main.tsx should have (module) synthetic
     const moduleComp = Object.keys(manifest.components).find((k) =>
       k.includes('main.tsx::(module)'),
     )
@@ -162,14 +151,12 @@ if (root) createRoot(root).render(<App />)
   }, 15000)
 
   it('locs: every data-redesigner-loc value in App.tsx maps to a manifest loc entry', async () => {
-    // Transform to get the loc values that will be injected + populate manifest
     const result = await server.transformRequest('/src/App.tsx')
     expect(result).not.toBeNull()
     if (!result) return
     const locAttrs = extractLocAttrs(result.code)
     expect(locAttrs.length).toBeGreaterThanOrEqual(1)
 
-    // Poll manifest until all locs appear (debounce window is 200ms, max 1s + poll overhead)
     const manifestPath = path.join(dir, '.redesigner/manifest.json')
     const deadline = Date.now() + 10000
     let manifest = await readManifest(manifestPath)
@@ -180,7 +167,6 @@ if (root) createRoot(root).render(<App />)
       await new Promise((r) => setTimeout(r, 100))
     }
 
-    // Every loc attribute in the compiled output must have a corresponding manifest.locs entry
     for (const loc of locAttrs) {
       expect(manifest.locs[loc]).toBeDefined()
     }

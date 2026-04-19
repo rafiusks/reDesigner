@@ -8,9 +8,9 @@ import { type ESBuildOptions, type Plugin, type ViteDevServer, createServer } fr
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import redesigner from '../../src/index'
 
-// ─── Task E-9: React Compiler integration (spec §8.3 row react-compiler.test.ts) ───
+// React Compiler integration (spec §8.3).
 //
-// Approach 2 — behavioural proxy (same philosophy as E-7).
+// Approach 2 — behavioural proxy (same philosophy as fast-refresh.test.ts).
 //
 // The spec's three concerns, rephrased at the transform level:
 //   (a) Fresh render: does `data-redesigner-loc` survive the React Compiler's
@@ -34,8 +34,6 @@ import redesigner from '../../src/index'
 // which invokes the React Compiler Babel plugin. The final composed output must
 // still contain our attribute.
 
-// Resolve to the packages/vite node_modules for React aliases.
-// The tmpdir project has no react installed; we point Vite's resolver at ours.
 const PKG_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..')
 const REACT_DIR = path.join(PKG_ROOT, 'node_modules/react')
 const REACT_DOM_DIR = path.join(PKG_ROOT, 'node_modules/react-dom')

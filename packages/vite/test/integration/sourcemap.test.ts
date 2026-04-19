@@ -8,8 +8,6 @@ import { type ESBuildOptions, type Plugin, type ViteDevServer, createServer } fr
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import redesigner from '../../src/index'
 
-// Resolve to the packages/vite node_modules for React aliases.
-// The tmpdir project has no react installed; we point Vite's resolver at our own.
 const PKG_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..')
 const REACT_DIR = path.join(PKG_ROOT, 'node_modules/react')
 const REACT_DOM_DIR = path.join(PKG_ROOT, 'node_modules/react-dom')

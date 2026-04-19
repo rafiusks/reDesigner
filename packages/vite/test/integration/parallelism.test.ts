@@ -23,8 +23,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import redesigner from '../../src/index'
 import { readManifest } from '../../src/reader'
 
-// Resolve to packages/vite for React aliases; the tmpdir project has no react
-// installed, so Vite's resolver is pointed at our own node_modules.
 const PKG_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..')
 const REACT_DIR = path.join(PKG_ROOT, 'node_modules/react')
 

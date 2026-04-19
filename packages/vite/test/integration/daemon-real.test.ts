@@ -86,8 +86,6 @@ describe('DaemonBridge start (real fixture packages)', () => {
     uninstallGuard = undefined
   })
 
-  // ------------------------------------------------------------- auto ------
-
   it('auto + throws package → no throw, warn captured, shutdown safe', async () => {
     const c = makeCollector()
     const bridge = new DaemonBridge()
@@ -155,8 +153,6 @@ describe('DaemonBridge start (real fixture packages)', () => {
     expect(c.warn[0]).toContain('timed out')
     await expect(bridge.shutdown({ logger: c.logger })).resolves.toBeUndefined()
   }, 10_000)
-
-  // --------------------------------------------------------- required ------
 
   it('required + throws package → rejects with package error message', async () => {
     const c = makeCollector()

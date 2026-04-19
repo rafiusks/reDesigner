@@ -37,8 +37,12 @@ export class ManifestWriter {
   private shutdownCalled = false
   private clock: Clock
   private logger: Logger
+  private readonly manifestDir: string
+  private readonly manifestBase: string
 
   constructor(private opts: ManifestWriterOptions) {
+    this.manifestDir = path.dirname(opts.manifestPath)
+    this.manifestBase = path.basename(opts.manifestPath)
     this.clock = opts.clock ?? {
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
@@ -51,8 +55,7 @@ export class ManifestWriter {
       debug: () => {},
     }
 
-    const dir = path.dirname(opts.manifestPath)
-    mkdirSync(dir, { recursive: true })
+    mkdirSync(this.manifestDir, { recursive: true })
 
     // wx flag detects a second dev server on the same manifestPath (collision → throw, not overwrite).
     const lockPath = `${opts.manifestPath}.owner-lock`
@@ -64,7 +67,7 @@ export class ManifestWriter {
       )
     }
 
-    this.startupSweep(dir)
+    this.startupSweep(this.manifestDir)
     this.writeSync(this.buildManifest())
   }
 
@@ -158,8 +161,8 @@ export class ManifestWriter {
   }
 
   private async flush(manifest: Manifest): Promise<void> {
-    const tmpName = `${path.basename(this.opts.manifestPath)}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`
-    const tmpPath = path.join(path.dirname(this.opts.manifestPath), tmpName)
+    const tmpName = `${this.manifestBase}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`
+    const tmpPath = path.join(this.manifestDir, tmpName)
     const data = `${JSON.stringify(manifest, null, 2)}\n`
 
     writeFileSync(tmpPath, data)
@@ -243,5 +246,7 @@ export class ManifestWriter {
       } catch {}
       this.lockFd = null
     }
+    this.state.clear()
+    this.onFlushResolvers = []
   }
 }

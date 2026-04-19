@@ -8,6 +8,7 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   target: 'node20',
-  // @redesigner/daemon is an optional runtime peer — not bundled
-  external: ['@redesigner/daemon'],
+  // @redesigner/daemon is an optional runtime peer; vite/@vitejs/plugin-react are
+  // peer dependencies supplied by the host project — never bundle any of them.
+  external: ['@redesigner/daemon', 'vite', '@vitejs/plugin-react'],
 })

@@ -24,9 +24,7 @@ const APP_SOURCE = `export default function App() {
 }
 `
 
-// Build a minimal ViteDevServer config shared across scenarios.
-// The tmpdir project has no React installed; point Vite's resolver at our own so
-// transformRequest can fully compile JSX without import-resolution failures.
+// The tmpdir has no React; alias resolution to the workspace's own install.
 function baseServerConfig(dir: string, extra: Partial<InlineConfig> = {}): InlineConfig {
   return {
     root: dir,
@@ -45,7 +43,6 @@ function baseServerConfig(dir: string, extra: Partial<InlineConfig> = {}): Inlin
   }
 }
 
-// Scaffold a minimal tmpdir project with a single src/App.tsx file.
 function scaffoldProject(prefix: string): string {
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), prefix)))
   mkdirSync(path.join(dir, 'src'), { recursive: true })
@@ -57,15 +54,12 @@ function scaffoldProject(prefix: string): string {
   return dir
 }
 
-// Race server.close() against a 2s ceiling to avoid macOS watcher hang.
+// macOS: FS watchers can keep server.close() pending >10s; cap at 2s.
 async function safeClose(server: ViteDevServer | undefined): Promise<void> {
   if (!server) return
   await Promise.race([server.close(), new Promise<void>((r) => setTimeout(r, 2000))])
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Scenario 1 — daemon: 'off' — plugin skips daemon entirely, transforms work
-// ─────────────────────────────────────────────────────────────────────────────
 describe('degradation: daemon off', () => {
   let dir: string
   let server: ViteDevServer
@@ -87,14 +81,10 @@ describe('degradation: daemon off', () => {
     const result = await server.transformRequest('/src/App.tsx')
     expect(result).not.toBeNull()
     if (!result) return
-    // The Babel plugin must have injected data-redesigner-loc attributes.
     expect(result.code).toContain('data-redesigner-loc')
   }, 15000)
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Scenario 2 — daemon: 'auto' (default) with daemon package absent → warn, transforms still work
-// ─────────────────────────────────────────────────────────────────────────────
 describe('degradation: daemon auto (package absent)', () => {
   let dir: string
   let server: ViteDevServer
@@ -104,7 +94,6 @@ describe('degradation: daemon auto (package absent)', () => {
     dir = scaffoldProject('redesigner-degrade-auto-')
     warnings.length = 0
 
-    // Vite's customLogger must implement the full Logger interface.
     const customLogger: Logger = {
       info: vi.fn(),
       warn: (_msg: string) => {
@@ -132,11 +121,10 @@ describe('degradation: daemon auto (package absent)', () => {
     const result = await server.transformRequest('/src/App.tsx')
     expect(result).not.toBeNull()
     if (!result) return
-    // Transform output must contain injected loc attributes.
     expect(result.code).toContain('data-redesigner-loc')
 
-    // The daemon start is awaited in configureServer before transformRequest is called, so by
-    // the time we get here at least one warning about the absent package must exist.
+    // daemon.start() is awaited in configureServer, so by the time transformRequest returns
+    // the warning about the absent package has already been captured.
     const daemonWarning = warnings.find(
       (w) =>
         w.includes('daemon package not installed') ||

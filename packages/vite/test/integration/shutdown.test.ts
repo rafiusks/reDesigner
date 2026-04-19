@@ -149,8 +149,6 @@ describe('DaemonBridge shutdown (real subprocess)', () => {
     children = []
   })
 
-  // ------------------------------------------------------------ POSIX ------
-
   itPosix(
     'POSIX: SIGTERM → clean exit, no SIGKILL escalation',
     async () => {
@@ -257,10 +255,7 @@ describe('DaemonBridge shutdown (real subprocess)', () => {
     10_000,
   )
 
-  // ---------------------------------------------------------- Windows ------
-  // These scenarios exercise `shutdownWindows` in daemonBridge. They only run
-  // on win32 — on POSIX CI legs they skip cleanly.
-
+  // Windows-only: exercises shutdownWindows in daemonBridge; skipped on POSIX.
   itWindows(
     'Windows: stdin shutdown ack → clean exit, no taskkill',
     async () => {

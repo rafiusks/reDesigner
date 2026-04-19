@@ -8,8 +8,6 @@ import type { Manifest } from '../../src/core/types-public'
 import redesigner from '../../src/index'
 import { readManifest } from '../../src/reader'
 
-// Resolve to the packages/vite node_modules for React aliases.
-// The tmpdir project has no react installed; we point Vite's resolver at our own.
 const PKG_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..')
 const REACT_DIR = path.join(PKG_ROOT, 'node_modules/react')
 const REACT_DOM_DIR = path.join(PKG_ROOT, 'node_modules/react-dom')
@@ -148,7 +146,6 @@ describe('vite integration: HMR — subscribe-before-edit + CAS replace semantic
     server = await makeServer(dir)
     attachObservers(server)
 
-    // Initial transform populates manifest.
     const before = await server.transformRequest(appUrl)
     expect(before).not.toBeNull()
     const beforeManifest = await pollManifest(dir, (m) =>
@@ -270,7 +267,6 @@ export default function App() {
     server = await makeServer(dir)
     const observers = attachObservers(server)
 
-    // Initial transforms.
     await server.transformRequest(alphaUrl)
     await server.transformRequest(betaUrl)
     await pollManifest(
