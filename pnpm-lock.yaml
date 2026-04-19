@@ -73,6 +73,9 @@ importers:
       '@babel/generator':
         specifier: ^7
         version: 7.29.1
+      '@jridgewell/trace-mapping':
+        specifier: ^0.3.31
+        version: 0.3.31
       '@types/babel__core':
         specifier: ^7
         version: 7.20.5
