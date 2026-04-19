@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.4",
-  "engines": { "node": ">=20.19.0", "pnpm": ">=9.15" },
+  "engines": { "node": ">=22.0.0", "pnpm": ">=9.15" },
   "scripts": {
     "lint": "biome check .",
     "format": "biome format --write .",
