@@ -42,6 +42,8 @@ function buildFromRoot(
     existsSync(path.join(projectRoot, f)),
   )
 
+  process.stderr.write(`[redesigner/mcp] resolved project root: ${projectRoot}\n`)
+
   return {
     projectRoot,
     manifestPath: path.join(projectRoot, manifestRelativePath),
@@ -100,7 +102,6 @@ export function resolveConfig(
         continue
       }
       const resolved = buildFromRoot(cur, manifestRelativePath)
-      process.stderr.write(`[redesigner/mcp] resolved project root: ${resolved.projectRoot}\n`)
       return resolved
     }
 
