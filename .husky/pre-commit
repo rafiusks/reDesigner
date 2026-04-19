@@ -1,6 +1,3 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
 # Block fixture updates without a changelog entry
 changed=$(git diff --cached --name-only)
 if echo "$changed" | grep -qE 'test/fixtures/.+/(output\.tsx|expected-manifest\.json)$'; then
