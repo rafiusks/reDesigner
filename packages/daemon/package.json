@@ -24,6 +24,8 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@redesigner/mcp": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
     "tsup": "^8.3.0",
