@@ -52,6 +52,17 @@ export function resolveHandoffPath(projectRoot: string): string {
   return path.join(root, projectHash, 'daemon-v1.json')
 }
 
+/**
+ * Returns the path to the TOFU trusted-ext-id sidecar file for a given project.
+ * Lives in the same per-project runtime directory as the handoff file.
+ */
+export function resolveTrustedExtIdPath(projectRoot: string): string {
+  const real = fs.realpathSync(projectRoot)
+  const projectHash = crypto.createHash('sha256').update(real).digest('hex').slice(0, 16)
+  const { root } = getRuntimeRoot()
+  return path.join(root, projectHash, 'trusted-ext-id')
+}
+
 export function buildHandoff(opts: {
   serverVersion: string
   pid: number
