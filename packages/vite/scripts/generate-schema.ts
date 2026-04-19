@@ -7,7 +7,8 @@ const outDir = path.join(root, 'dist')
 mkdirSync(outDir, { recursive: true })
 
 const gen = createGenerator({
-  path: path.join(root, 'src/core/manifestSchema.ts'),
+  // Point directly at core's types source — the Manifest type lives in @redesigner/core.
+  path: path.resolve(root, '../core/src/types.ts'),
   tsconfig: path.join(root, 'tsconfig.json'),
   type: 'Manifest',
 })
