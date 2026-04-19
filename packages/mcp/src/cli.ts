@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { FileBackend } from './backend'
 import { resolveConfig } from './config'
+import { DaemonBackend } from './daemonBackend.js'
 import { buildServer } from './server'
 
 async function main(): Promise<void> {
@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   })
 
   const config = resolveConfig(values, process.cwd(), process.env)
-  const backend = new FileBackend({
+  const backend = new DaemonBackend({
     projectRoot: config.projectRoot,
     manifestPath: config.manifestPath,
     selectionPath: config.selectionPath,

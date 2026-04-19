@@ -58,11 +58,12 @@ describe('MCP integration — SDK Client ↔ spawned cli.ts', () => {
     ])
   })
 
-  it('get_current_selection returns the fixture handle', async () => {
+  it('get_current_selection returns null when daemon absent', async () => {
     const res = await client.callTool({ name: 'get_current_selection', arguments: {} })
     const content = res.content as Array<{ type: string; text?: string }>
     const parsed = JSON.parse(content[0]?.text ?? 'null')
-    expect(parsed).toMatchObject({ id: 'sel-001', componentName: 'Foo' })
+    // DaemonBackend returns null when handoff file missing (daemon absent)
+    expect(parsed).toBe(null)
   })
 
   it('resources/read manifest returns fixture data', async () => {
