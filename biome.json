@@ -21,6 +21,7 @@
   "files": {
     "ignore": [
       "**/dist/**",
+      "**/.redesigner/**",
       "**/test/fixtures/**/output.tsx",
       "**/test/fixtures/**/expected-manifest.json"
     ]

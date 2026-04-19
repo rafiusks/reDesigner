@@ -19,6 +19,11 @@ function callName(expr: t.Expression | t.V8IntrinsicIdentifier): string | null {
 }
 
 function unwrap(node: t.Expression): t.Expression {
+  // Defense against @vitejs/plugin-react Fast-Refresh marker `_c = function X() {}`
+  // injected when plugin-react runs before us in the pipeline.
+  if (t.isAssignmentExpression(node) && node.operator === '=') {
+    return unwrap(node.right)
+  }
   if (t.isCallExpression(node)) {
     const name = callName(node.callee as t.Expression)
     if (name && (MEMO_NAMES.has(name) || FORWARDREF_NAMES.has(name)) && node.arguments.length > 0) {
