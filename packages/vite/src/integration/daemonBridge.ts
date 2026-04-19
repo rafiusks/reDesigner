@@ -29,6 +29,22 @@ export interface DaemonShutdownOptions {
 
 const REQUIRED_HANDLE_KEYS = ['pid', 'shutdown', 'stdout', 'stdin', 'stderr'] as const
 
+// If the daemon package's module graph has a top-level-await that never resolves
+// (hung network I/O, pathological bootstrap), the dynamic import() would pin this
+// process forever — Node has no API to abort an in-flight import. We race it
+// against a 2s timer and fall through (or throw in required mode) if it wins.
+// The pending import still leaks in the background; callers that care about pool
+// hygiene (vitest workers) must run in `pool: 'forks', isolate: true` so the
+// leaked import dies with the fork.
+const IMPORT_TIMEOUT_MS = 2_000
+
+class DaemonImportTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`daemon package import did not settle within ${ms}ms`)
+    this.name = 'DaemonImportTimeoutError'
+  }
+}
+
 export class DaemonBridge {
   private handle: DaemonHandle | null = null
   private shutdownCalled = false
@@ -38,8 +54,30 @@ export class DaemonBridge {
     if (opts.mode === 'off') return
     let mod: Awaited<ReturnType<typeof opts.importer>>
     try {
-      mod = await opts.importer()
+      let timer: NodeJS.Timeout | undefined
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new DaemonImportTimeoutError(IMPORT_TIMEOUT_MS)),
+          IMPORT_TIMEOUT_MS,
+        )
+        // Don't keep the event loop alive purely for this timer (matters for short-lived hosts).
+        timer.unref?.()
+      })
+      try {
+        mod = await Promise.race([opts.importer(), timeoutPromise])
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
     } catch (err: unknown) {
+      if (err instanceof DaemonImportTimeoutError) {
+        if (opts.mode === 'required') {
+          throw new Error(`[redesigner] daemon required but import timed out: ${err.message}`)
+        }
+        opts.logger.warn(
+          `[redesigner] daemon package import timed out after ${IMPORT_TIMEOUT_MS}ms (continuing): ${err.message}`,
+        )
+        return
+      }
       const code = (err as NodeJS.ErrnoException | undefined)?.code
       const message = (err as Error | undefined)?.message ?? String(err)
       if (code === 'ERR_MODULE_NOT_FOUND' || code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') {
@@ -52,7 +90,23 @@ export class DaemonBridge {
         return
       }
       const stack = (err as Error | undefined)?.stack ?? String(err)
+      if (opts.mode === 'required') {
+        throw new Error(`[redesigner] daemon required but errored on import: ${message}`)
+      }
       opts.logger.warn(`[redesigner] daemon package errored on import (continuing): ${stack}`)
+      return
+    }
+
+    // Shape check: module loaded but might not export startDaemon (wrong package
+    // installed, stale version, etc.). Treat as a soft failure in auto mode so the
+    // build continues in manifest-only mode; hard fail in required mode.
+    if (typeof mod?.startDaemon !== 'function') {
+      if (opts.mode === 'required') {
+        throw new Error('[redesigner] daemon required but package does not export startDaemon')
+      }
+      opts.logger.warn(
+        '[redesigner] daemon package does not export startDaemon — running in manifest-only mode',
+      )
       return
     }
 

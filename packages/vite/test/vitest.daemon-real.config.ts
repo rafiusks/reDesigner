@@ -6,6 +6,7 @@ export default defineConfig({
     include: ['test/integration/daemon-real.test.ts'],
     pool: 'forks',
     isolate: true,
+    fileParallelism: false,
     passWithNoTests: true,
   },
 })
