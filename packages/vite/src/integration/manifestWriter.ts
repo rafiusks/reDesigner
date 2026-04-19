@@ -20,7 +20,7 @@ const RETRY_DELAYS_MS = [50, 100, 200, 400, 800, 1600, 3200]
 export interface ManifestWriterOptions {
   projectRoot: string
   manifestPath: string
-  framework?: string
+  framework?: 'react'
   clock?: Clock
   logger?: Logger
 }

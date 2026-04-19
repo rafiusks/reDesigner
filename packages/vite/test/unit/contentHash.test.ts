@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { canonicalize, computeContentHash } from '../../src/core/contentHash'
+import type { Manifest } from '../../src/core/types-public'
 
 const baseManifest = () => ({
   schemaVersion: '1.0' as const,
@@ -23,8 +24,16 @@ describe('canonicalize', () => {
 
 describe('computeContentHash', () => {
   it('excludes generatedAt and contentHash from hash', () => {
-    const m1 = { ...baseManifest(), generatedAt: '2020-01-01T00:00:00.000Z', contentHash: 'foo' }
-    const m2 = { ...baseManifest(), generatedAt: '2099-12-31T23:59:59.000Z', contentHash: 'bar' }
+    const m1 = {
+      ...baseManifest(),
+      generatedAt: '2020-01-01T00:00:00.000Z',
+      contentHash: 'foo',
+    } as unknown as Manifest
+    const m2 = {
+      ...baseManifest(),
+      generatedAt: '2099-12-31T23:59:59.000Z',
+      contentHash: 'bar',
+    } as unknown as Manifest
     expect(computeContentHash(m1)).toBe(computeContentHash(m2))
   })
   it('property: key-order in components does not change hash', () => {
@@ -43,8 +52,14 @@ describe('computeContentHash', () => {
         (components) => {
           const entries = Object.entries(components)
           const shuffled = Object.fromEntries([...entries].reverse())
-          const h1 = computeContentHash({ ...baseManifest(), components })
-          const h2 = computeContentHash({ ...baseManifest(), components: shuffled })
+          const h1 = computeContentHash({
+            ...baseManifest(),
+            components,
+          } as unknown as Manifest)
+          const h2 = computeContentHash({
+            ...baseManifest(),
+            components: shuffled,
+          } as unknown as Manifest)
           expect(h1).toBe(h2)
         },
       ),

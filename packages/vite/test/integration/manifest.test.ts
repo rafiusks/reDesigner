@@ -9,7 +9,9 @@ function freshDir(): string {
   return mkdtempSync(path.join(tmpdir(), 'redesigner-manifest-'))
 }
 
-function baseManifest(overrides: Partial<Manifest> = {}): Manifest {
+function baseManifest(
+  overrides: Partial<Record<keyof Manifest, unknown>> = {},
+): Record<string, unknown> {
   return {
     schemaVersion: '1.0',
     framework: 'react',
@@ -38,7 +40,7 @@ describe('manifest: reader + contentHash', () => {
           displayName: 'A',
         },
       },
-    })
+    }) as unknown as Manifest
     m.contentHash = computeContentHash(m)
     writeFileSync(p, JSON.stringify(m, null, 2))
     const out = await readManifest(p)
@@ -79,13 +81,13 @@ describe('manifest: reader + contentHash', () => {
   })
 
   it('contentHash: excludes generatedAt — same components produce same hash regardless of timestamp', () => {
-    const m1 = baseManifest({ generatedAt: '2020-01-01T00:00:00.000Z' })
-    const m2 = baseManifest({ generatedAt: '2099-12-31T23:59:59.999Z' })
+    const m1 = baseManifest({ generatedAt: '2020-01-01T00:00:00.000Z' }) as unknown as Manifest
+    const m2 = baseManifest({ generatedAt: '2099-12-31T23:59:59.999Z' }) as unknown as Manifest
     expect(computeContentHash(m1)).toBe(computeContentHash(m2))
   })
 
   it('contentHash: changes when components change', () => {
-    const m1 = baseManifest()
+    const m1 = baseManifest() as unknown as Manifest
     const m2 = baseManifest({
       components: {
         'src/a.tsx::A': {
@@ -95,7 +97,7 @@ describe('manifest: reader + contentHash', () => {
           displayName: 'A',
         },
       },
-    })
+    }) as unknown as Manifest
     expect(computeContentHash(m1)).not.toBe(computeContentHash(m2))
   })
 })

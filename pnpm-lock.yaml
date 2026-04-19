@@ -88,6 +88,9 @@ importers:
       '@babel/types':
         specifier: ^7
         version: 7.29.0
+      '@redesigner/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@babel/generator':
         specifier: ^7
