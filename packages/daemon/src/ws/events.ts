@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { type RawData, type WebSocket, WebSocketServer } from 'ws'
 import { compareToken, extractBearer } from '../auth.js'
+import { hostAllow } from '../hostAllow.js'
 import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import type { EventBus } from '../state/eventBus.js'
@@ -58,6 +59,7 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
     perMessageDeflate: false,
   })
   const upgradeBucket = createTokenBucket({ ratePerSec: 5, burst: 5 })
+  const isAllowedHost = hostAllow(opts.port)
   let subscriber: WebSocket | null = null
 
   const handleUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
@@ -74,11 +76,12 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
       return
     }
 
-    // 1. Host allowlist (strict 127.0.0.1:<port>, not localhost).
-    const expectedHost = `127.0.0.1:${opts.port}`
-    if (req.headers.host !== expectedHost) {
+    // 1. Host allowlist — shared literal set via hostAllow(): localhost:<port>,
+    //    127.0.0.1:<port>, [::1]:<port>. Mismatch → 421 Misdirected Request
+    //    (matches HTTP path; spec §3.2).
+    if (!isAllowedHost(req.headers.host)) {
       opts.logger.warn('[ws] host rejected', { host: req.headers.host ?? null })
-      writeHttpReject(socket, 400, 'Bad Request')
+      writeHttpReject(socket, 421, 'Misdirected Request')
       return
     }
 

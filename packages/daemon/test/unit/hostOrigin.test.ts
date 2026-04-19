@@ -351,6 +351,115 @@ describe('WS Origin allowlist — integration', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Integration: WS Host-header allowlist (real WS server)
+//
+// Mirrors the HTTP path: the WS upgrade uses the same hostAllow() predicate
+// and rejects with 421 Misdirected Request (not 400) on a Host mismatch.
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw WS upgrade via net.Socket so we can set Host explicitly. `ws`'s client
+ * rewrites Host from the URL, which makes it impossible to exercise the
+ * server's host check through the high-level API.
+ *
+ * Resolves as soon as the response's status line + header terminator arrive.
+ * On a 101 accept the socket stays open (WebSocket protocol takes over), so
+ * we can't wait for 'end'.
+ */
+function rawWsUpgrade(
+  port: number,
+  host: string,
+  bearer: string,
+): Promise<{ status: number; reason: string }> {
+  return new Promise((resolve, reject) => {
+    const sock = new net.Socket()
+    const chunks: Buffer[] = []
+    let settled = false
+    const done = (result: { status: number; reason: string }): void => {
+      if (settled) return
+      settled = true
+      sock.destroy()
+      resolve(result)
+    }
+    sock.connect(port, '127.0.0.1', () => {
+      const lines = [
+        'GET /events HTTP/1.1',
+        `Host: ${host}`,
+        `Authorization: Bearer ${bearer}`,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+        'Sec-WebSocket-Version: 13',
+        '',
+        '',
+      ]
+      sock.write(lines.join('\r\n'))
+    })
+    sock.on('data', (c: Buffer) => {
+      chunks.push(c)
+      const raw = Buffer.concat(chunks).toString('utf8')
+      // Headers terminator — enough to parse the status line whether the
+      // response is a 101 (no body) or a 4xx close-with-headers.
+      if (raw.includes('\r\n\r\n')) {
+        const firstLine = raw.split('\r\n')[0] ?? ''
+        const parts = firstLine.split(' ')
+        const status = Number.parseInt(parts[1] ?? '0', 10)
+        const reason = parts.slice(2).join(' ')
+        done({ status, reason })
+      }
+    })
+    sock.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8')
+      const firstLine = raw.split('\r\n')[0] ?? ''
+      const parts = firstLine.split(' ')
+      const status = Number.parseInt(parts[1] ?? '0', 10)
+      const reason = parts.slice(2).join(' ')
+      done({ status, reason })
+    })
+    sock.on('error', (err: NodeJS.ErrnoException) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    })
+  })
+}
+
+describe('WS Host-header allowlist — integration', () => {
+  const bearer = crypto.randomBytes(32).toString('base64url')
+  const token = Buffer.from(bearer, 'utf8')
+  let handle: Awaited<ReturnType<typeof listenOnEphemeral>>
+
+  beforeEach(async () => {
+    handle = await listenOnEphemeral(token)
+  })
+  afterEach(async () => {
+    await handle.close()
+  })
+
+  it('rejects WS upgrade with Host: localhost.attacker.com:<port> → 421 (suffix trap)', async () => {
+    const res = await rawWsUpgrade(handle.port, `localhost.attacker.com:${handle.port}`, bearer)
+    expect(res.status).toBe(421)
+  })
+
+  it('rejects WS upgrade with Host: evil.com → 421 (not 400)', async () => {
+    const res = await rawWsUpgrade(handle.port, 'evil.com', bearer)
+    expect(res.status).toBe(421)
+  })
+
+  it('accepts WS upgrade with Host: localhost:<port> (shared allowlist)', async () => {
+    const res = await rawWsUpgrade(handle.port, `localhost:${handle.port}`, bearer)
+    // 101 Switching Protocols = accepted upgrade. The handshake completes
+    // (or would complete) because the Host allowlist and auth both passed.
+    expect(res.status).toBe(101)
+  })
+
+  it('accepts WS upgrade with Host: [::1]:<port> (IPv6 loopback literal)', async () => {
+    const res = await rawWsUpgrade(handle.port, `[::1]:${handle.port}`, bearer)
+    expect(res.status).toBe(101)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Integration: no 3xx from any HTTP route (§5 spec requirement)
 // ---------------------------------------------------------------------------
 

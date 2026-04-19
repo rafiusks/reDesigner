@@ -35,3 +35,14 @@ test('rejects missing / non-string / empty host', () => {
   expect(fn(undefined)).toBe(false)
   expect(fn('')).toBe(false)
 })
+
+test.each([
+  'localhost:5173 ', // trailing whitespace
+  ' localhost:5173', // leading whitespace
+  'localhost:5173/', // trailing slash (not an authority)
+  'localhost::5173', // duplicated colon
+  '[0:0:0:0:0:0:0:1]:5173', // non-canonical IPv6 form of ::1
+  '[::1]:5173 ', // trailing whitespace IPv6
+])('rejects malformed / non-canonical Host: %s', (h) => {
+  expect(hostAllow(5173)(h)).toBe(false)
+})
