@@ -8,6 +8,7 @@ export class RpcCorrelation {
 
   tryAcquire(): boolean {
     if (this.active >= this.concurrencyLimit) return false
+    this.active++
     return true
   }
 
@@ -16,7 +17,8 @@ export class RpcCorrelation {
   }
 
   register(id: string, timeoutMs: number): Promise<unknown> {
-    this.active++
+    // Caller must have called tryAcquire() successfully before calling register().
+    // register() does NOT increment active — tryAcquire() already did.
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         if (!this.pending.has(id)) return
@@ -48,5 +50,13 @@ export class RpcCorrelation {
 
   rejectAll(err: Error): void {
     for (const [id] of this.pending) this.reject(id, err)
+  }
+
+  /**
+   * Release a slot acquired via tryAcquire() without registering an id.
+   * Call this when you acquired a slot but need to abort before calling register().
+   */
+  releaseAcquired(): void {
+    this.active = Math.max(0, this.active - 1)
   }
 }

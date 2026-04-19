@@ -54,6 +54,10 @@ export class EventBus {
     return { kind: 'hello-gap', droppedFrom: since + 1, droppedTo: current - RING_CAP }
   }
 
+  subscriberCount(): number {
+    return this.subscribers.size
+  }
+
   addSubscriber(ws: WebSocket): Subscriber {
     const sub: Subscriber = { ws, paused: false, drainLoopCount: 0, lastDeliveredSeq: 0 }
     this.subscribers.add(sub)

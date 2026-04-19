@@ -4,6 +4,7 @@ import { RpcCorrelation } from '../../src/ws/rpcCorrelation.js'
 describe('RpcCorrelation smoke', () => {
   it('register + resolve matches by id', async () => {
     const r = new RpcCorrelation(8)
+    expect(r.tryAcquire()).toBe(true)
     const p = r.register('id-1', 5000)
     r.resolve('id-1', { styles: {} })
     await expect(p).resolves.toEqual({ styles: {} })
@@ -11,6 +12,8 @@ describe('RpcCorrelation smoke', () => {
   it('timeout rejects pending and frees slot before reject resolves', async () => {
     vi.useFakeTimers()
     const r = new RpcCorrelation(1)
+    const ok = r.tryAcquire()
+    expect(ok).toBe(true)
     const p = r.register('id-1', 100)
     expect(r.tryAcquire()).toBe(false) // slot occupied
     vi.advanceTimersByTime(150)
