@@ -2,6 +2,9 @@ node_modules/
 dist/
 coverage/
 .redesigner/
+# Keep synthetic test fixtures that live under .redesigner/ subdirs.
+!packages/mcp/test/fixtures/**/.redesigner/
+!packages/mcp/test/fixtures/**/.redesigner/**
 pnpm-debug.log
 .DS_Store
 
