@@ -1,12 +1,14 @@
 import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { type WebSocket, WebSocketServer } from 'ws'
+import { type RawData, type WebSocket, WebSocketServer } from 'ws'
 import { compareToken, extractBearer } from '../auth.js'
 import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import type { EventBus } from '../state/eventBus.js'
 import type { ManifestWatcher } from '../state/manifestWatcher.js'
 import type { SelectionState } from '../state/selectionState.js'
+import { RpcResponseFrameSchema } from './frames.js'
+import type { RpcCorrelation } from './rpcCorrelation.js'
 
 const SINCE_RE = /^(0|[1-9][0-9]{0,15})$/
 const ORIGIN_ALLOW = /^(chrome-extension:\/\/|moz-extension:\/\/|vscode-webview:\/\/)/
@@ -30,6 +32,7 @@ export interface EventsOptions {
   eventBus: EventBus
   selectionState: SelectionState
   manifestWatcher: ManifestWatcher
+  rpcCorrelation: RpcCorrelation
   serverVersion: string
   instanceId: string
   logger: Logger
@@ -201,6 +204,34 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
       }, PING_INTERVAL_MS)
       pingInterval.unref?.()
 
+      // Extension → daemon wire: the ext replies to rpc.request frames with
+      // rpc.response frames. Parse, validate, and correlate by JSON-RPC id.
+      const onMessage = (data: RawData, isBinary: boolean): void => {
+        if (isBinary) {
+          opts.logger.warn('[ws] unexpected binary frame from subscriber; dropping')
+          return
+        }
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(data.toString())
+        } catch {
+          opts.logger.warn('[ws] subscriber sent non-JSON; dropping')
+          return
+        }
+        const result = RpcResponseFrameSchema.safeParse(parsed)
+        if (!result.success) {
+          opts.logger.warn('[ws] subscriber sent unknown/malformed frame; dropping')
+          return
+        }
+        const payload = result.data.payload
+        if ('result' in payload) {
+          opts.rpcCorrelation.resolve(payload.id, payload.result)
+        } else {
+          opts.rpcCorrelation.reject(payload.id, new Error(`rpc error: ${payload.error.message}`))
+        }
+      }
+      ws.on('message', onMessage)
+
       ws.on('close', () => {
         clearInterval(pingInterval)
         if (pongTimer) {
@@ -208,7 +239,12 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
           pongTimer = null
         }
         ws.off('pong', onPong)
+        ws.off('message', onMessage)
         if (subscriber === ws) subscriber = null
+        // Fail any in-flight RPCs awaiting this subscriber. The router's
+        // error taxonomy maps messages containing "disconnected" → 503
+        // ExtensionDisconnected with Retry-After: 2.
+        opts.rpcCorrelation.rejectAll(new Error('ext disconnected'))
       })
 
       ws.on('error', (err) => {

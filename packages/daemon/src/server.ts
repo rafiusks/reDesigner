@@ -172,6 +172,7 @@ export function createDaemonServer(opts: ServerOptions): {
     eventBus: opts.ctx.eventBus,
     selectionState: opts.ctx.selectionState,
     manifestWatcher: opts.ctx.manifestWatcher,
+    rpcCorrelation: opts.ctx.rpcCorrelation,
     serverVersion: opts.ctx.serverVersion,
     instanceId: opts.ctx.instanceId,
     logger: opts.ctx.logger,

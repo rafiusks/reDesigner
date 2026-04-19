@@ -107,12 +107,21 @@ export async function handleBrowserToolPost(
   try {
     result = await ctx.rpcCorrelation.register(rpcId, timeoutMs)
   } catch (e) {
-    const msg = (e as Error).message
+    // Lowercase match so error-string casing in `new Error(...)` sites doesn't
+    // silently fall through to the generic branch. Lifecycle uses 'Shutdown';
+    // rpcCorrelation uses 'rpc timeout'; ws/events uses 'ext disconnected'.
+    const msg = (e as Error).message.toLowerCase()
     if (msg.includes('timeout')) {
       sendProblem(
         res,
         problem(504, 'ExtensionTimeout', `rpc did not respond within ${timeoutMs}ms`, reqId),
       )
+      return
+    }
+    if (msg.includes('shutdown')) {
+      sendProblem(res, problem(503, 'Shutdown', 'daemon is shutting down', reqId), {
+        Connection: 'close',
+      })
       return
     }
     if (msg.includes('disconnected')) {
@@ -121,12 +130,6 @@ export async function handleBrowserToolPost(
         problem(503, 'ExtensionDisconnected', 'extension disconnected mid-flight', reqId),
         { 'Retry-After': '2' },
       )
-      return
-    }
-    if (msg.includes('shutdown')) {
-      sendProblem(res, problem(503, 'Shutdown', 'daemon is shutting down', reqId), {
-        Connection: 'close',
-      })
       return
     }
     // Generic fallback — treat as transient disconnect
