@@ -2,15 +2,25 @@
   "name": "@redesigner/vite",
   "version": "0.0.0",
   "private": true,
-  "publishConfig": { "access": "restricted" },
+  "publishConfig": {
+    "access": "restricted"
+  },
   "type": "module",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./reader": { "types": "./dist/reader.d.ts", "import": "./dist/reader.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./reader": {
+      "types": "./dist/reader.d.ts",
+      "import": "./dist/reader.js"
+    },
     "./manifest-schema.json": "./dist/manifest-schema.json"
   },
   "files": ["dist", "README.md"],
-  "engines": { "node": ">=20.11.0" },
+  "engines": {
+    "node": ">=20.11.0"
+  },
   "scripts": {
     "build": "tsup && pnpm run generate-schema",
     "generate-schema": "tsx scripts/generate-schema.ts",
@@ -21,11 +31,13 @@
     "lint": "biome check ."
   },
   "peerDependencies": {
-    "vite": "^5 || ^6 || ^7",
-    "@vitejs/plugin-react": "^5"
+    "@vitejs/plugin-react": "^5",
+    "vite": "^5 || ^6 || ^7"
   },
   "peerDependenciesMeta": {
-    "@vitejs/plugin-react": { "optional": true }
+    "@vitejs/plugin-react": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@babel/core": "^7",
@@ -43,6 +55,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^5",
+    "babel-plugin-react-compiler": "^1.0.0",
     "fast-check": "^3",
     "react": "^19",
     "react-dom": "^19",
