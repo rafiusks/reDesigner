@@ -59,7 +59,7 @@ async function main(): Promise<void> {
       }
       eventBus.broadcast({
         type: 'manifest.updated',
-        payload: { contentHash: m.contentHash, componentCount: m.components.length },
+        payload: { contentHash: m.contentHash, componentCount: Object.keys(m.components).length },
       })
     },
     fs.promises.readFile,
