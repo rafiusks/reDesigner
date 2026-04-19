@@ -67,8 +67,10 @@ export class ManifestWriter {
       )
     }
 
+    // Sweep BEFORE atomicWrite so the sweep can't race with our own tmp file.
+    // atomicWrite is used for both bootstrap and HMR flushes — no non-atomic write paths.
     this.startupSweep(this.manifestDir)
-    this.writeSync(this.buildManifest())
+    this.atomicWrite(this.buildManifest())
   }
 
   private startupSweep(dir: string) {
@@ -81,6 +83,53 @@ export class ManifestWriter {
         }
       }
     } catch {}
+  }
+
+  private atomicWrite(manifest: Manifest): void {
+    const data = `${JSON.stringify(manifest, null, 2)}\n`
+    const tmpName = `${this.manifestBase}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`
+    const tmpPath = path.join(this.manifestDir, tmpName)
+    writeFileSync(tmpPath, data)
+
+    for (let i = 0; i <= RETRY_DELAYS_MS.length; i++) {
+      try {
+        renameSync(tmpPath, this.opts.manifestPath)
+        if (i >= 2) this.logger.warn(`[redesigner] atomic rename succeeded after ${i} retries`)
+        return
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (i === RETRY_DELAYS_MS.length) {
+          try {
+            unlinkSync(tmpPath)
+          } catch {}
+          this.logger.error(
+            `[redesigner] atomic rename failed after ${RETRY_DELAYS_MS.length + 1} attempts: ${err}`,
+          )
+          return
+        }
+        if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY') {
+          const delay = RETRY_DELAYS_MS[i] ?? 0
+          this.logger.debug?.(
+            `[redesigner] rename retry ${i + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms (${code})`,
+          )
+          const until = Date.now() + delay
+          while (Date.now() < until) {
+            /* busy-wait; writer is sync */
+          }
+          continue
+        }
+        if (code === 'EXDEV') {
+          this.logger.warn(
+            `[redesigner] EXDEV (cross-device rename) — plugin bug, please file issue. tmp=${tmpPath} target=${this.opts.manifestPath}`,
+          )
+        }
+        try {
+          unlinkSync(tmpPath)
+        } catch {}
+        this.logger.warn(`[redesigner] atomic rename failed: ${err}`)
+        return
+      }
+    }
   }
 
   private buildManifest(): Manifest {
@@ -161,53 +210,7 @@ export class ManifestWriter {
   }
 
   private async flush(manifest: Manifest): Promise<void> {
-    const tmpName = `${this.manifestBase}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`
-    const tmpPath = path.join(this.manifestDir, tmpName)
-    const data = `${JSON.stringify(manifest, null, 2)}\n`
-
-    writeFileSync(tmpPath, data)
-
-    for (let i = 0; ; i++) {
-      try {
-        renameSync(tmpPath, this.opts.manifestPath)
-        if (i >= 2) this.logger.warn(`[redesigner] atomic rename succeeded after ${i} retries`)
-        return
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException | undefined)?.code
-        if (i >= RETRY_DELAYS_MS.length) {
-          try {
-            unlinkSync(tmpPath)
-          } catch {}
-          this.logger.error(
-            `[redesigner] atomic rename failed after ${RETRY_DELAYS_MS.length + 1} attempts: ${err}`,
-          )
-          return
-        }
-        if (code === 'EPERM' || code === 'EBUSY') {
-          const delay = RETRY_DELAYS_MS[i] ?? 0
-          this.logger.debug?.(
-            `[redesigner] rename retry ${i + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms (${code})`,
-          )
-          await new Promise<void>((r) => this.clock.setTimeout(() => r(), delay))
-          continue
-        }
-        if (code === 'EXDEV') {
-          this.logger.warn(
-            `[redesigner] EXDEV (cross-device rename) — plugin bug, please file issue. tmp=${tmpPath} target=${this.opts.manifestPath}`,
-          )
-        }
-        try {
-          unlinkSync(tmpPath)
-        } catch {}
-        this.logger.warn(`[redesigner] atomic rename failed: ${err}`)
-        return
-      }
-    }
-  }
-
-  private writeSync(manifest: Manifest): void {
-    const data = `${JSON.stringify(manifest, null, 2)}\n`
-    writeFileSync(this.opts.manifestPath, data)
+    this.atomicWrite(manifest)
   }
 
   /** Forces a flush and resolves after it lands. Test seam. */
