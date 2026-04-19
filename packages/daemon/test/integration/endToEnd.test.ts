@@ -26,200 +26,26 @@
  *     {"type":"ready","port":N,"instanceId":"..."} per serializeReadyLine().
  *   - WS auth: Authorization: Bearer <token> HTTP header on the WS upgrade
  *     request (not a subprotocol and not a query param). See src/ws/events.ts.
+ *
+ * Fork harness: `spawnDaemon()` + `forceKill()` + `seedManifest()` live in
+ * test/helpers/forkDaemon.ts so manifestHmr.test.ts can reuse them.
  */
 
-import { fork } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
-import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { HandoffSchema, discoverHandoff, resolveHandoffPath } from '../../src/handoff.js'
+import { HandoffSchema } from '../../src/handoff.js'
+import { CHILD_JS, type DaemonHarness, forceKill, spawnDaemon } from '../helpers/forkDaemon.js'
 import { assertNoLeakedResources, snapshotResources } from '../helpers/leakDetector.js'
-import { cleanupTempDirs, randomTempDir } from '../helpers/randomTempDir.js'
+import { cleanupTempDirs } from '../helpers/randomTempDir.js'
 
 // ---------------------------------------------------------------------------
 // Platform-timed constants
 // ---------------------------------------------------------------------------
 
-const READY_TIMEOUT_MS = process.platform === 'win32' ? 10_000 : 2_000
 const SHUTDOWN_TIMEOUT_MS = 2_000
 const WS_FRAME_TIMEOUT_MS = 500
 const FETCH_TIMEOUT_MS = 2_000
-
-// ---------------------------------------------------------------------------
-// Paths to built artefacts
-// ---------------------------------------------------------------------------
-
-// import.meta.dirname is available on Node ≥22 per package engines.
-const INTEGRATION_DIR = import.meta.dirname
-const PACKAGE_DIR = path.resolve(INTEGRATION_DIR, '..', '..')
-const CHILD_JS = path.join(PACKAGE_DIR, 'dist', 'child.js')
-
-// ---------------------------------------------------------------------------
-// Spawn harness
-// ---------------------------------------------------------------------------
-
-interface Harness {
-  child: ChildProcess
-  projectRoot: string
-  manifestPath: string
-  handoffPath: string
-  port: number
-  instanceId: string
-  token: string
-  urlPrefix: string
-  authHeader: string
-}
-
-/**
- * Write a minimal valid manifest so /manifest returns 200 instead of 503.
- * The contentHash is ignored by ManifestWatcher — it recomputes from raw bytes
- * — but the schema requires a valid 64-char hex string.
- */
-function seedManifest(manifestPath: string): void {
-  fs.mkdirSync(path.dirname(manifestPath), { recursive: true })
-  const manifest = {
-    schemaVersion: '1.0',
-    framework: 'react',
-    generatedAt: new Date().toISOString(),
-    contentHash: '0'.repeat(64),
-    components: {
-      'src/App.tsx::App': {
-        filePath: 'src/App.tsx',
-        exportKind: 'default' as const,
-        lineRange: [1, 10],
-        displayName: 'App',
-      },
-    },
-    locs: {},
-  }
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest), { mode: 0o600 })
-}
-
-/**
- * Fork dist/child.js, await the ready line (JSON on stdout with `{type:'ready'}`),
- * discover the handoff, and return a harness.
- */
-async function spawnDaemon(): Promise<Harness> {
-  const projectRoot = randomTempDir('redesigner-e2e-')
-  const realProjectRoot = fs.realpathSync(projectRoot)
-  const manifestPath = path.join(realProjectRoot, '.redesigner', 'manifest.json')
-  seedManifest(manifestPath)
-  const handoffPath = resolveHandoffPath(realProjectRoot)
-
-  const child = fork(CHILD_JS, [], {
-    env: {
-      ...process.env,
-      REDESIGNER_MANIFEST_PATH: manifestPath,
-      REDESIGNER_DAEMON_VERSION: '0.0.1',
-    },
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-  })
-
-  let ready: { port: number; instanceId: string } | null = null
-  let stdoutBuf = ''
-  let stderrBuf = ''
-
-  const readyPromise = new Promise<{ port: number; instanceId: string }>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(
-        new Error(
-          `ready line not received within ${READY_TIMEOUT_MS}ms; ` +
-            `stdout=${JSON.stringify(stdoutBuf)} stderr=${JSON.stringify(stderrBuf)}`,
-        ),
-      )
-    }, READY_TIMEOUT_MS)
-    timer.unref()
-
-    const onStdout = (chunk: Buffer): void => {
-      stdoutBuf += chunk.toString('utf8')
-      // Ready line is newline-terminated; scan complete lines.
-      let nl = stdoutBuf.indexOf('\n')
-      while (nl !== -1) {
-        const line = stdoutBuf.slice(0, nl).trim()
-        stdoutBuf = stdoutBuf.slice(nl + 1)
-        if (line.length > 0) {
-          try {
-            const parsed = JSON.parse(line) as {
-              type?: unknown
-              port?: unknown
-              instanceId?: unknown
-            }
-            if (
-              parsed.type === 'ready' &&
-              typeof parsed.port === 'number' &&
-              typeof parsed.instanceId === 'string'
-            ) {
-              clearTimeout(timer)
-              child.stdout?.off('data', onStdout)
-              child.stderr?.off('data', onStderr)
-              ready = { port: parsed.port, instanceId: parsed.instanceId }
-              resolve(ready)
-              return
-            }
-          } catch {
-            // Non-JSON stdout line — ignore and continue.
-          }
-        }
-        nl = stdoutBuf.indexOf('\n')
-      }
-    }
-    const onStderr = (chunk: Buffer): void => {
-      stderrBuf += chunk.toString('utf8')
-    }
-    child.stdout?.on('data', onStdout)
-    child.stderr?.on('data', onStderr)
-    child.once('exit', (code, signal) => {
-      if (ready === null) {
-        clearTimeout(timer)
-        reject(
-          new Error(`child exited before ready: code=${code} signal=${signal} stderr=${stderrBuf}`),
-        )
-      }
-    })
-  })
-
-  const { port, instanceId } = await readyPromise
-
-  // Discover handoff to get the token (daemon minted it internally and wrote the file).
-  const discovery = discoverHandoff(realProjectRoot)
-  if (!discovery) {
-    throw new Error(`handoff not discoverable at ${handoffPath}`)
-  }
-  // Validate exactly against HandoffSchema.
-  const validated = HandoffSchema.parse(discovery.parsed)
-  expect(validated.instanceId).toBe(instanceId)
-  expect(validated.port).toBe(port)
-
-  return {
-    child,
-    projectRoot: realProjectRoot,
-    manifestPath,
-    handoffPath,
-    port,
-    instanceId,
-    token: discovery.parsed.token,
-    urlPrefix: discovery.urlPrefix,
-    authHeader: discovery.authHeader,
-  }
-}
-
-/**
- * Force-kill the child if still alive; wait for exit; return whether it was
- * already gone. Used in afterEach so a failed test cannot leak a child.
- */
-async function forceKill(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return
-  await new Promise<void>((resolve) => {
-    child.once('exit', () => resolve())
-    try {
-      child.kill('SIGKILL')
-    } catch {
-      resolve()
-    }
-  })
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -227,7 +53,7 @@ async function forceKill(child: ChildProcess): Promise<void> {
 
 describe('daemon endToEnd — fork + ready + REST + WS + graceful shutdown', () => {
   let before: Set<string>
-  let harnesses: Harness[] = []
+  let harnesses: DaemonHarness[] = []
 
   beforeAll(() => {
     if (!fs.existsSync(CHILD_JS)) {
@@ -251,7 +77,7 @@ describe('daemon endToEnd — fork + ready + REST + WS + graceful shutdown', () 
 
   it('full round-trip: ready → handoff → REST → WS → /shutdown', async () => {
     before = snapshotResources()
-    const h = await spawnDaemon()
+    const h = await spawnDaemon({ tempDirPrefix: 'redesigner-e2e-' })
     harnesses.push(h)
 
     // ----- 1. Handoff validates against HandoffSchema exactly.
@@ -454,7 +280,7 @@ describe('daemon endToEnd — fork + ready + REST + WS + graceful shutdown', () 
   })
 
   it('SIGTERM fallback: child exits cleanly when signalled without /shutdown', async () => {
-    const h = await spawnDaemon()
+    const h = await spawnDaemon({ tempDirPrefix: 'redesigner-e2e-' })
     harnesses.push(h)
 
     // Don't call /shutdown. Send SIGTERM directly; the signal handler in child.ts
