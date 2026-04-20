@@ -319,7 +319,7 @@ describe('browserToolProxy — HTTP ↔ WS proxy for browser-tool RPCs', () => {
     const h = await boot()
     const res = await postBrowserTool(h, '/computed_styles', { handle: SAMPLE_HANDLE })
     expect(res.status).toBe(424)
-    expect(res.headers.get('content-type')).toBe('application/problem+json')
+    expect(res.headers.get('content-type')).toBe('application/problem+json; charset=utf-8')
     const body = (await res.json()) as { code?: string; status?: number; type?: string }
     expect(body.code).toBe('ExtensionUnavailable')
     expect(body.status).toBe(424)
