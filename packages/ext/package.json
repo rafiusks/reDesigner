@@ -25,6 +25,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/browser": "^2.1.0",
+    "fast-check": "^3",
     "happy-dom": "^15",
     "playwright": "1.47.2",
     "typescript": "^5.5.0",
