@@ -6,8 +6,12 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
-    "./child": { "import": "./dist/child.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./child": { "import": "./dist/child.js", "default": "./dist/child.js" }
   },
   "files": ["dist"],
   "scripts": {

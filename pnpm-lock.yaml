@@ -30,6 +30,9 @@ importers:
         specifier: ^19.0.0
         version: 19.2.5(react@19.2.5)
     devDependencies:
+      '@redesigner/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
       '@redesigner/vite':
         specifier: workspace:*
         version: link:../../packages/vite
