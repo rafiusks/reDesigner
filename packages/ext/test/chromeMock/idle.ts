@@ -17,7 +17,7 @@ export function makeIdleMock(recorder: SideEffectRecorder) {
 
     onStateChanged: {
       addListener(fn: (state: chrome.idle.IdleState) => void) {
-        onStateChangedListeners.push(fn)
+        if (!onStateChangedListeners.includes(fn)) onStateChangedListeners.push(fn)
       },
       removeListener(fn: (state: chrome.idle.IdleState) => void) {
         const i = onStateChangedListeners.indexOf(fn)

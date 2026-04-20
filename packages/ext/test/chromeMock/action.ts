@@ -21,7 +21,7 @@ export function makeActionMock(recorder: SideEffectRecorder) {
 
     onClicked: {
       addListener(fn: (tab: chrome.tabs.Tab) => void) {
-        onClickedListeners.push(fn)
+        if (!onClickedListeners.includes(fn)) onClickedListeners.push(fn)
       },
       removeListener(fn: (tab: chrome.tabs.Tab) => void) {
         const i = onClickedListeners.indexOf(fn)

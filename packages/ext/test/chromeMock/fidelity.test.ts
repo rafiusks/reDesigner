@@ -56,18 +56,18 @@ function loadGolden(name: string): ComparableSideEffect[] {
 //   - runtime.sendMessage  (SW→CS hello ack)
 // ---------------------------------------------------------------------------
 
-function runSelectionRoundTrip(chrome: ReturnType<typeof makeChromeMock>): void {
+async function runSelectionRoundTrip(chrome: ReturnType<typeof makeChromeMock>): Promise<void> {
   const sessionToken = 'tok-test-1234'
   const iconPath = 'icons/connected.png'
 
   // 1. SW stores session token
-  chrome.storage.session.set({ sessionToken })
+  await chrome.storage.session.set({ sessionToken })
 
   // 2. SW updates action icon to reflect connected state
-  chrome.action.setIcon({ path: iconPath })
+  await chrome.action.setIcon({ path: iconPath })
 
   // 3. SW sends hello-ack back to CS via runtime.sendMessage
-  chrome.runtime.sendMessage({ type: 'hello-ack', token: sessionToken })
+  await chrome.runtime.sendMessage({ type: 'hello-ack', token: sessionToken })
 }
 
 // ---------------------------------------------------------------------------
@@ -78,15 +78,15 @@ function runSelectionRoundTrip(chrome: ReturnType<typeof makeChromeMock>): void 
 //   - storage.session.set  (cache-hit timestamp stored)
 // ---------------------------------------------------------------------------
 
-function runManifestCache(chrome: ReturnType<typeof makeChromeMock>): void {
+async function runManifestCache(chrome: ReturnType<typeof makeChromeMock>): Promise<void> {
   const manifest = { version: '1.0.0', components: ['Button', 'Input'] }
   const fetchedAt = 1_700_000_000_000
 
   // SW writes manifest to local cache
-  chrome.storage.local.set({ manifest: JSON.stringify(manifest) })
+  await chrome.storage.local.set({ manifest: JSON.stringify(manifest) })
 
   // SW records cache-hit timestamp in session storage
-  chrome.storage.session.set({ manifestCacheAt: fetchedAt })
+  await chrome.storage.session.set({ manifestCacheAt: fetchedAt })
 }
 
 // ---------------------------------------------------------------------------
@@ -98,9 +98,9 @@ function runManifestCache(chrome: ReturnType<typeof makeChromeMock>): void {
 //   - action.setTitle      (title updated to reflect discovery)
 // ---------------------------------------------------------------------------
 
-function runWelcomeAlarm(chrome: ReturnType<typeof makeChromeMock>): void {
+async function runWelcomeAlarm(chrome: ReturnType<typeof makeChromeMock>): Promise<void> {
   // 1. SW schedules the welcome alarm
-  chrome.alarms.create('welcome', { delayInMinutes: 0.1 })
+  await chrome.alarms.create('welcome', { delayInMinutes: 0.1 })
 
   // 2. Simulate alarm firing — listener updates discovery state
   const listeners = chrome.alarms._getListeners('onAlarm')
@@ -109,10 +109,10 @@ function runWelcomeAlarm(chrome: ReturnType<typeof makeChromeMock>): void {
   }
 
   // 3. Handler stores updated discovery state
-  chrome.storage.local.set({ discoveryState: 'welcomed' })
+  await chrome.storage.local.set({ discoveryState: 'welcomed' })
 
   // 4. Handler updates tooltip
-  chrome.action.setTitle({ title: 'reDesigner — connected' })
+  await chrome.action.setTitle({ title: 'reDesigner — connected' })
 }
 
 // ---------------------------------------------------------------------------
@@ -126,31 +126,27 @@ describe('chromeMock fidelity-diff oracle', () => {
     chrome = makeChromeMock()
   })
 
-  it('selection-round-trip matches golden', () => {
-    // Register a dummy onAlarm listener so welcome-alarm scenario works when
-    // this scenario runs in isolation too.
-    chrome.alarms.onAlarm.addListener(() => {})
-
-    runSelectionRoundTrip(chrome)
+  it('selection-round-trip matches golden', async () => {
+    await runSelectionRoundTrip(chrome)
     const actual = normalize(chrome._recorder.snapshot())
     const expected = loadGolden('selection-round-trip')
     expect(actual).toEqual(expected)
   })
 
-  it('manifest-cache matches golden', () => {
-    runManifestCache(chrome)
+  it('manifest-cache matches golden', async () => {
+    await runManifestCache(chrome)
     const actual = normalize(chrome._recorder.snapshot())
     const expected = loadGolden('manifest-cache')
     expect(actual).toEqual(expected)
   })
 
-  it('welcome-alarm matches golden', () => {
+  it('welcome-alarm matches golden', async () => {
     // Register an alarm listener so runWelcomeAlarm has something to fire.
     chrome.alarms.onAlarm.addListener((_alarm) => {
       // side-effect already recorded by runWelcomeAlarm
     })
 
-    runWelcomeAlarm(chrome)
+    await runWelcomeAlarm(chrome)
     const actual = normalize(chrome._recorder.snapshot())
     const expected = loadGolden('welcome-alarm')
     expect(actual).toEqual(expected)

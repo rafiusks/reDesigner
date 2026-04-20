@@ -18,7 +18,7 @@ function makeEventWithListeners<T extends (...args: never[]) => unknown>() {
   const listeners: T[] = []
   return {
     addListener(fn: T) {
-      listeners.push(fn)
+      if (!listeners.includes(fn)) listeners.push(fn)
     },
     removeListener(fn: T) {
       const i = listeners.indexOf(fn)
@@ -38,7 +38,7 @@ function makePort(name: string, recorder: SideEffectRecorder): chrome.runtime.Po
     name,
     onMessage: {
       addListener(fn: (msg: unknown) => void) {
-        messageListeners.push(fn)
+        if (!messageListeners.includes(fn)) messageListeners.push(fn)
       },
       removeListener(fn: (msg: unknown) => void) {
         const i = messageListeners.indexOf(fn)
@@ -50,7 +50,7 @@ function makePort(name: string, recorder: SideEffectRecorder): chrome.runtime.Po
     } as unknown as chrome.events.Event<(message: unknown) => void>,
     onDisconnect: {
       addListener(fn: () => void) {
-        disconnectListeners.push(fn)
+        if (!disconnectListeners.includes(fn)) disconnectListeners.push(fn)
       },
       removeListener(fn: () => void) {
         const i = disconnectListeners.indexOf(fn)

@@ -34,7 +34,7 @@ export function makeDebuggerMock(recorder: SideEffectRecorder) {
 
     onEvent: {
       addListener(fn: (source: chrome.debugger.Debuggee, method: string, params?: object) => void) {
-        onEventListeners.push(fn)
+        if (!onEventListeners.includes(fn)) onEventListeners.push(fn)
       },
       removeListener(
         fn: (source: chrome.debugger.Debuggee, method: string, params?: object) => void,

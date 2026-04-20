@@ -21,7 +21,7 @@ export function makePermissionsMock(recorder: SideEffectRecorder) {
 
     onAdded: {
       addListener(fn: (permissions: chrome.permissions.Permissions) => void) {
-        onAddedListeners.push(fn)
+        if (!onAddedListeners.includes(fn)) onAddedListeners.push(fn)
       },
       removeListener(fn: (permissions: chrome.permissions.Permissions) => void) {
         const i = onAddedListeners.indexOf(fn)
@@ -34,7 +34,7 @@ export function makePermissionsMock(recorder: SideEffectRecorder) {
 
     onRemoved: {
       addListener(fn: (permissions: chrome.permissions.Permissions) => void) {
-        onRemovedListeners.push(fn)
+        if (!onRemovedListeners.includes(fn)) onRemovedListeners.push(fn)
       },
       removeListener(fn: (permissions: chrome.permissions.Permissions) => void) {
         const i = onRemovedListeners.indexOf(fn)

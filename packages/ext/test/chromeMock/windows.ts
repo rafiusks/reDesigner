@@ -46,7 +46,7 @@ export function makeWindowsMock(recorder: SideEffectRecorder) {
 
     onFocusChanged: {
       addListener(fn: (windowId: number) => void) {
-        onFocusChangedListeners.push(fn)
+        if (!onFocusChangedListeners.includes(fn)) onFocusChangedListeners.push(fn)
       },
       removeListener(fn: (windowId: number) => void) {
         const i = onFocusChangedListeners.indexOf(fn)

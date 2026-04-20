@@ -10,7 +10,7 @@ export function makeAlarmsMock(recorder: SideEffectRecorder) {
   const onAlarmListeners: ((alarm: chrome.alarms.Alarm) => void)[] = []
 
   return {
-    create(name: string, alarmInfo: chrome.alarms.AlarmCreateInfo): void {
+    create(name: string, alarmInfo: chrome.alarms.AlarmCreateInfo): Promise<void> {
       recorder.record({ type: 'alarms.create', args: { name, alarmInfo } })
       const alarm: chrome.alarms.Alarm = {
         name,
@@ -18,6 +18,7 @@ export function makeAlarmsMock(recorder: SideEffectRecorder) {
         periodInMinutes: alarmInfo.periodInMinutes,
       }
       _alarms.set(name, alarm)
+      return Promise.resolve()
     },
 
     clear(name?: string): Promise<boolean> {
@@ -48,7 +49,7 @@ export function makeAlarmsMock(recorder: SideEffectRecorder) {
 
     onAlarm: {
       addListener(fn: (alarm: chrome.alarms.Alarm) => void) {
-        onAlarmListeners.push(fn)
+        if (!onAlarmListeners.includes(fn)) onAlarmListeners.push(fn)
       },
       removeListener(fn: (alarm: chrome.alarms.Alarm) => void) {
         const i = onAlarmListeners.indexOf(fn)

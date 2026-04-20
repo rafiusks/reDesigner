@@ -17,7 +17,7 @@ export function makeCommandsMock(recorder: SideEffectRecorder) {
 
     onCommand: {
       addListener(fn: (command: string) => void) {
-        onCommandListeners.push(fn)
+        if (!onCommandListeners.includes(fn)) onCommandListeners.push(fn)
       },
       removeListener(fn: (command: string) => void) {
         const i = onCommandListeners.indexOf(fn)

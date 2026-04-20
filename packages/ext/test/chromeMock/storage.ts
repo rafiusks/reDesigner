@@ -42,7 +42,7 @@ function makeStorageArea(
       recorder.record({ type: `storage.${areaName}.set`, args: items })
       const changes: StorageChanges = {}
       for (const [k, v] of Object.entries(items)) {
-        changes[k] = { oldValue: store[k], newValue: v }
+        changes[k] = k in store ? { oldValue: store[k], newValue: v } : { newValue: v }
         store[k] = v
       }
       fireOnChanged(changes)
@@ -80,7 +80,7 @@ export function makeStorageMock(recorder: SideEffectRecorder) {
 
   const onChanged = {
     addListener(fn: OnChangedCallback) {
-      onChangedListeners.push(fn)
+      if (!onChangedListeners.includes(fn)) onChangedListeners.push(fn)
     },
     removeListener(fn: OnChangedCallback) {
       const i = onChangedListeners.indexOf(fn)

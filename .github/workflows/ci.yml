@@ -26,7 +26,7 @@ jobs:
           Add-MpPreference -ExclusionProcess "node.exe"
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 50
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
@@ -137,13 +137,12 @@ jobs:
               - 'packages/ext/test/chromeMock/**'
             ext_integration:
               - 'packages/ext/test/integration/**'
-      - name: Check for new chrome. references in ext/src
+      - name: Detect new chrome.* references in ext src
         id: chrome_grep
         shell: bash
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          if git diff --unified=0 "${base}...HEAD" -- 'packages/ext/src/**' \
-               | grep -qE '^\+.*chrome\.'; then
+          BASE=$(git merge-base "origin/${{ github.base_ref }}" HEAD)
+          if git diff --unified=0 "$BASE"...HEAD -- 'packages/ext/src/**' | grep -E '^\+.*chrome\.' >/dev/null; then
             echo "added=true" >> "$GITHUB_OUTPUT"
           else
             echo "added=false" >> "$GITHUB_OUTPUT"

@@ -62,7 +62,7 @@ export function makeTabsMock(recorder: SideEffectRecorder) {
 
     onActivated: {
       addListener(fn: (info: chrome.tabs.TabActiveInfo) => void) {
-        onActivatedListeners.push(fn)
+        if (!onActivatedListeners.includes(fn)) onActivatedListeners.push(fn)
       },
       removeListener(fn: (info: chrome.tabs.TabActiveInfo) => void) {
         const i = onActivatedListeners.indexOf(fn)
@@ -77,7 +77,7 @@ export function makeTabsMock(recorder: SideEffectRecorder) {
       addListener(
         fn: (tabId: number, info: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => void,
       ) {
-        onUpdatedListeners.push(fn)
+        if (!onUpdatedListeners.includes(fn)) onUpdatedListeners.push(fn)
       },
       removeListener(
         fn: (tabId: number, info: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => void,
@@ -94,7 +94,7 @@ export function makeTabsMock(recorder: SideEffectRecorder) {
 
     onRemoved: {
       addListener(fn: (tabId: number, info: chrome.tabs.TabRemoveInfo) => void) {
-        onRemovedListeners.push(fn)
+        if (!onRemovedListeners.includes(fn)) onRemovedListeners.push(fn)
       },
       removeListener(fn: (tabId: number, info: chrome.tabs.TabRemoveInfo) => void) {
         const i = onRemovedListeners.indexOf(fn)
