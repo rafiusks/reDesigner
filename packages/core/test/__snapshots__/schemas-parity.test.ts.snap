@@ -589,7 +589,7 @@ exports[`SelectionPutBodySchema JSON Schema matches committed golden 1`] = `
       "type": "string",
     },
     "meta": {
-      "additionalProperties": false,
+      "additionalProperties": {},
       "properties": {
         "source": {
           "enum": [
@@ -674,7 +674,6 @@ exports[`SelectionPutBodySchema JSON Schema matches committed golden 1`] = `
   },
   "required": [
     "nodes",
-    "clientId",
   ],
   "type": "object",
 }
@@ -682,7 +681,7 @@ exports[`SelectionPutBodySchema JSON Schema matches committed golden 1`] = `
 
 exports[`SelectionPutResponseSchema JSON Schema matches committed golden 1`] = `
 {
-  "additionalProperties": false,
+  "additionalProperties": {},
   "properties": {
     "acceptedAt": {
       "exclusiveMinimum": 0,

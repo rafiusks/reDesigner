@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 /**
  * Error taxonomy.
  *
@@ -94,3 +96,32 @@ export const RpcToApiErrorCode: Partial<Record<RpcErrorCode, ApiErrorCode>> = Ob
     .filter(([, rpc]) => rpc !== null)
     .map(([api, rpc]) => [rpc, api]),
 ) as Partial<Record<RpcErrorCode, ApiErrorCode>>
+
+// ---------------------------------------------------------------------------
+// Zod schemas for machine-parseable error bodies returned by the daemon for
+// selected 4xx responses.
+//
+// Both shapes use `.catchall(z.unknown())` on the outer and
+// `z.enum(...).or(z.string())` on `reason` so Stage 2 can add new reason
+// codes without breaking existing clients. Tests pin the currently-known enum
+// values; unknown values parse successfully.
+// ---------------------------------------------------------------------------
+
+export const AuthErrorSchema = z
+  .object({
+    error: z.literal('auth'),
+    reason: z.enum(['extid-mismatch', 'token-unknown', 'token-tofu-fail']).or(z.string()),
+  })
+  .catchall(z.unknown())
+export type AuthError = z.infer<typeof AuthErrorSchema>
+
+export const CorsErrorSchema = z
+  .object({
+    error: z.literal('cors'),
+    reason: z.enum(['malformed-origin', 'missing-origin']).or(z.string()),
+  })
+  .catchall(z.unknown())
+export type CorsError = z.infer<typeof CorsErrorSchema>
+
+export const ApiErrorSchema = z.discriminatedUnion('error', [AuthErrorSchema, CorsErrorSchema])
+export type ApiErrorBody = z.infer<typeof ApiErrorSchema>
