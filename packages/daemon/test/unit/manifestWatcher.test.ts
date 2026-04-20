@@ -555,71 +555,76 @@ describe('ManifestWatcher — contentHash recomputed from raw bytes', () => {
 // ---------------------------------------------------------------------------
 
 describe('ManifestWatcher — stat-poll detects missed fs.watch event', () => {
-  // CI-skip rationale: this test's fake-timer ordering relies on stat-poll
-  // firing before fs.watch's real event loop turn. On macOS locally that
-  // interleaves predictably; on Linux CI runners fs.watch fires first, updates
-  // cachedMtimeMs via the watch-triggered reread, and the stat-poll then has
-  // nothing to recover — statPollRecoveries never increments. Proper fix is
-  // to inject fs.watch as a ctor dependency and swap in a no-op here. Filed
-  // as v0.1. The production stat-poll fallback itself is exercised by
-  // integration tests via forked daemon + real fs writes (see
-  // packages/daemon/test/integration/manifestHmr.test.ts).
-  it.skipIf(process.env.CI)(
-    'stat-poll triggers reread when mtime advances but fs.watch event was missed',
-    async () => {
-      singleFlightState.blocked = false
+  // fs.watch is swapped for a no-op factory so the ONLY recovery path is
+  // stat-poll. This makes the test deterministic on every platform —
+  // previously the real fs.watch on Linux CI beat stat-poll to the reread
+  // and suppressed statPollRecoveries. See v0.1 follow-up.
+  function noopFsWatch(): typeof fs.watch {
+    return ((..._args: Parameters<typeof fs.watch>) => {
+      const stub = {
+        on: () => stub,
+        once: () => stub,
+        off: () => stub,
+        removeListener: () => stub,
+        removeAllListeners: () => stub,
+        emit: () => false,
+        close: () => {},
+        ref: () => stub,
+        unref: () => stub,
+      }
+      return stub as unknown as fs.FSWatcher
+    }) as unknown as typeof fs.watch
+  }
 
-      const manifestPath = path.join(dir, 'manifest.json')
-      const { hash: initialHash } = writeManifest(manifestPath, validManifest())
+  it('stat-poll triggers reread when mtime advances but fs.watch event was missed', async () => {
+    singleFlightState.blocked = false
 
-      const realStat = fs.promises.stat
+    const manifestPath = path.join(dir, 'manifest.json')
+    const { hash: initialHash } = writeManifest(manifestPath, validManifest())
 
-      vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
+    vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
 
-      const broadcastCount = { n: 0 }
-      const watcher = new ManifestWatcher(
-        manifestPath,
-        () => {
-          broadcastCount.n++
-        },
-        fs.promises.readFile,
-        realStat,
-        noopLogger,
-      )
+    const broadcastCount = { n: 0 }
+    const watcher = new ManifestWatcher(
+      manifestPath,
+      () => {
+        broadcastCount.n++
+      },
+      fs.promises.readFile,
+      fs.promises.stat,
+      noopLogger,
+      noopFsWatch(),
+    )
 
-      const startPromise = watcher.start()
-      await vi.advanceTimersByTimeAsync(200)
-      await startPromise
+    const startPromise = watcher.start()
+    await vi.advanceTimersByTimeAsync(200)
+    await startPromise
 
-      expect(broadcastCount.n).toBe(1)
-      expect(watcher.stats.validated).toBe(1)
+    expect(broadcastCount.n).toBe(1)
+    expect(watcher.stats.validated).toBe(1)
 
-      const { hash: newHash } = writeManifest(
-        manifestPath,
-        validManifest({ generatedAt: '2024-07-01T00:00:00.000Z' }),
-      )
-      expect(newHash).not.toBe(initialHash)
+    // Write new bytes. fs.watch is a no-op so ONLY stat-poll can detect this.
+    const { hash: newHash } = writeManifest(
+      manifestPath,
+      validManifest({ generatedAt: '2024-07-01T00:00:00.000Z' }),
+    )
+    expect(newHash).not.toBe(initialHash)
 
-      await vi.advanceTimersByTimeAsync(3000)
-      await new Promise<void>((res) => {
-        vi.useRealTimers()
-        setTimeout(res, 50)
-      })
-      vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
-      await vi.advanceTimersByTimeAsync(200)
-      await new Promise<void>((res) => {
-        vi.useRealTimers()
-        setTimeout(res, 100)
-      })
-      vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
+    // Advance through one full stat-poll tick (3000ms) + debounce window + I/O.
+    await vi.advanceTimersByTimeAsync(3100)
+    // Yield to real microtasks so fd.open/read/close settle.
+    vi.useRealTimers()
+    await new Promise<void>((res) => setTimeout(res, 100))
+    vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
+    await vi.advanceTimersByTimeAsync(200)
+    vi.useRealTimers()
+    await new Promise<void>((res) => setTimeout(res, 50))
 
-      expect(watcher.stats.statPollRecoveries).toBeGreaterThanOrEqual(1)
-      expect(broadcastCount.n).toBeGreaterThanOrEqual(2)
+    expect(watcher.stats.statPollRecoveries).toBeGreaterThanOrEqual(1)
+    expect(broadcastCount.n).toBeGreaterThanOrEqual(2)
 
-      await watcher.stop()
-      vi.useRealTimers()
-    },
-  )
+    await watcher.stop()
+  })
 
   it('stat-poll does NOT fire when mtime is unchanged (no false positives)', async () => {
     singleFlightState.blocked = false

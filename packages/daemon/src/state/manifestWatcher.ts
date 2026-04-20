@@ -27,6 +27,7 @@ export class ManifestWatcher {
     private fsReadFile: typeof fs.promises.readFile,
     private fsStat: typeof fs.promises.stat,
     private logger: Logger,
+    private fsWatch: typeof fs.watch = fs.watch,
   ) {}
 
   async start(): Promise<void> {
@@ -39,7 +40,7 @@ export class ManifestWatcher {
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
     }
-    this.watcher = fs.watch(watchDir, { persistent: false })
+    this.watcher = this.fsWatch(watchDir, { persistent: false })
     this.watcher.on('change', (_, filename) => {
       if (filename === basename) this.scheduleReread()
     })
