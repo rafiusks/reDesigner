@@ -115,19 +115,12 @@ export function makeTabsMock(recorder: SideEffectRecorder) {
           : onRemovedListeners
     },
 
-    emit(
-      event: 'onActivated' | 'onUpdated' | 'onRemoved',
-      ...args: unknown[]
-    ) {
+    emit(event: 'onActivated' | 'onUpdated' | 'onRemoved', ...args: unknown[]) {
       if (event === 'onActivated') {
         for (const fn of onActivatedListeners) fn(args[0] as chrome.tabs.TabActiveInfo)
       } else if (event === 'onUpdated') {
         for (const fn of onUpdatedListeners) {
-          fn(
-            args[0] as number,
-            args[1] as chrome.tabs.TabChangeInfo,
-            args[2] as chrome.tabs.Tab,
-          )
+          fn(args[0] as number, args[1] as chrome.tabs.TabChangeInfo, args[2] as chrome.tabs.Tab)
         }
       } else if (event === 'onRemoved') {
         for (const fn of onRemovedListeners) {

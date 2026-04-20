@@ -10,7 +10,7 @@ export type MessageListener = (
   message: unknown,
   sender: chrome.runtime.MessageSender,
   sendResponse: (response?: unknown) => void,
-) => boolean | void
+) => boolean | undefined
 
 export type ConnectListener = (port: chrome.runtime.Port) => void
 
@@ -74,9 +74,7 @@ function makePort(name: string, recorder: SideEffectRecorder): chrome.runtime.Po
 export function makeRuntimeMock(recorder: SideEffectRecorder) {
   let _lastError: chrome.runtime.LastError | undefined
 
-  const onInstalled = makeEventWithListeners<
-    (details: chrome.runtime.InstalledDetails) => void
-  >()
+  const onInstalled = makeEventWithListeners<(details: chrome.runtime.InstalledDetails) => void>()
   const onStartup = makeEventWithListeners<() => void>()
   const onMessage = makeEventWithListeners<MessageListener>()
   const onConnect = makeEventWithListeners<ConnectListener>()
@@ -99,16 +97,12 @@ export function makeRuntimeMock(recorder: SideEffectRecorder) {
       return new Promise((resolve) => {
         let responded = false
         for (const fn of onMessage._listeners) {
-          fn(
-            message,
-            {} as chrome.runtime.MessageSender,
-            (resp) => {
-              if (!responded) {
-                responded = true
-                resolve(resp)
-              }
-            },
-          )
+          fn(message, {} as chrome.runtime.MessageSender, (resp) => {
+            if (!responded) {
+              responded = true
+              resolve(resp)
+            }
+          })
         }
         if (!responded) resolve(undefined)
       })
@@ -127,10 +121,7 @@ export function makeRuntimeMock(recorder: SideEffectRecorder) {
     },
 
     /** Trigger an event listener from test code */
-    emit(
-      event: 'onInstalled' | 'onStartup' | 'onMessage' | 'onConnect',
-      ...args: unknown[]
-    ) {
+    emit(event: 'onInstalled' | 'onStartup' | 'onMessage' | 'onConnect', ...args: unknown[]) {
       const ev = { onInstalled, onStartup, onMessage, onConnect }[event]
       for (const fn of ev._listeners) {
         ;(fn as (...a: unknown[]) => unknown)(...args)

@@ -117,6 +117,80 @@ jobs:
             packages/vite/test/**/*.log
             **/.redesigner/manifest.json*
 
+  # Detect which path buckets changed so downstream jobs can gate cheaply.
+  paths:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    outputs:
+      ext_chromeMock: ${{ steps.filter.outputs.ext_chromeMock }}
+      ext_integration: ${{ steps.filter.outputs.ext_integration }}
+      ext_src_chrome_added: ${{ steps.chrome_grep.outputs.added }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ext_chromeMock:
+              - 'packages/ext/test/chromeMock/**'
+            ext_integration:
+              - 'packages/ext/test/integration/**'
+      - name: Check for new chrome. references in ext/src
+        id: chrome_grep
+        shell: bash
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if git diff --unified=0 "${base}...HEAD" -- 'packages/ext/src/**' \
+               | grep -qE '^\+.*chrome\.'; then
+            echo "added=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "added=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ext-chromemock-fidelity:
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.paths.outputs.ext_chromeMock == 'true' ||
+       needs.paths.outputs.ext_integration == 'true' ||
+       needs.paths.outputs.ext_src_chrome_added == 'true')
+    needs: paths
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Corepack preflight
+        shell: bash
+        run: |
+          V=$(corepack --version || echo "0.0")
+          MAJOR=$(echo "$V" | cut -d. -f1)
+          MINOR=$(echo "$V" | cut -d. -f2)
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -lt 31 ]; then
+            echo "Corepack $V below 0.31.0 — upgrading"
+            npm install -g corepack@latest
+          fi
+          corepack enable pnpm
+          command -v pnpm
+          pnpm --version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-ubuntu-24.04-22-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-ubuntu-24.04-22-
+            pnpm-ubuntu-24.04-
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm --filter @redesigner/ext test -- test/chromeMock/fidelity.test.ts
+
   all-green:
     needs: [test]
     if: always()

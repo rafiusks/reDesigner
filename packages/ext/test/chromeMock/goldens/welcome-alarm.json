@@ -1,0 +1,11 @@
+{
+  "_comment": "Scenario: welcome alarm fires + updates discovery state. Hand-crafted for v0.",
+  "expected": [
+    {
+      "type": "alarms.create",
+      "args": { "name": "welcome", "alarmInfo": { "delayInMinutes": 0.1 } }
+    },
+    { "type": "storage.local.set", "args": { "discoveryState": "welcomed" } },
+    { "type": "action.setTitle", "args": { "title": "reDesigner — connected" } }
+  ]
+}

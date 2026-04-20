@@ -27,11 +27,7 @@ function makeStorageArea(
     ): Promise<Record<string, unknown>> {
       recorder.record({ type: `storage.${areaName}.get`, args: keys ?? null })
       if (keys == null) return Promise.resolve({ ...store })
-      const ks = Array.isArray(keys)
-        ? keys
-        : typeof keys === 'string'
-          ? [keys]
-          : Object.keys(keys)
+      const ks = Array.isArray(keys) ? keys : typeof keys === 'string' ? [keys] : Object.keys(keys)
       const result: Record<string, unknown> = {}
       for (const k of ks) {
         if (k in store) result[k] = store[k]
@@ -69,12 +65,7 @@ function makeStorageArea(
 
     getBytesInUse(keys?: string | string[] | null): Promise<number> {
       recorder.record({ type: `storage.${areaName}.getBytesInUse`, args: keys ?? null })
-      const ks =
-        keys == null
-          ? Object.keys(store)
-          : Array.isArray(keys)
-            ? keys
-            : [keys]
+      const ks = keys == null ? Object.keys(store) : Array.isArray(keys) ? keys : [keys]
       const bytes = ks.reduce((acc, k) => {
         if (k in store) return acc + JSON.stringify(store[k]).length
         return acc
