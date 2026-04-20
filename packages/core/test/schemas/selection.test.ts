@@ -11,7 +11,7 @@ const validHandle = {
   timestamp: 1_700_000_000_000,
 }
 
-describe('SelectionPutBodySchema (Slice E + E.1)', () => {
+describe('SelectionPutBodySchema', () => {
   test('validates body WITH clientId', () => {
     const r = SelectionPutBodySchema.safeParse({
       nodes: [validHandle],
@@ -20,7 +20,7 @@ describe('SelectionPutBodySchema (Slice E + E.1)', () => {
     expect(r.success).toBe(true)
   })
 
-  test('validates body WITHOUT clientId (now optional per Slice E)', () => {
+  test('validates body WITHOUT clientId (optional)', () => {
     const r = SelectionPutBodySchema.safeParse({ nodes: [validHandle] })
     expect(r.success).toBe(true)
   })
@@ -38,7 +38,7 @@ describe('SelectionPutBodySchema (Slice E + E.1)', () => {
     expect(r.success).toBe(false)
   })
 
-  test('meta accepts unknown fields via catchall (Slice E.1)', () => {
+  test('meta accepts unknown fields via catchall', () => {
     const r = SelectionPutBodySchema.safeParse({
       nodes: [validHandle],
       meta: { source: 'picker', pickSeq: 42 },
@@ -55,7 +55,7 @@ describe('SelectionPutBodySchema (Slice E + E.1)', () => {
   })
 })
 
-describe('SelectionPutResponseSchema (Slice E.1 forward-evolution)', () => {
+describe('SelectionPutResponseSchema (forward-evolvable)', () => {
   test('validates known fields', () => {
     const r = SelectionPutResponseSchema.safeParse({
       selectionSeq: 1,

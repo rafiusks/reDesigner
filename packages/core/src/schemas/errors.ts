@@ -97,15 +97,10 @@ export const RpcToApiErrorCode: Partial<Record<RpcErrorCode, ApiErrorCode>> = Ob
     .map(([api, rpc]) => [rpc, api]),
 ) as Partial<Record<RpcErrorCode, ApiErrorCode>>
 
-// ---------------------------------------------------------------------------
-// Zod schemas for machine-parseable error bodies returned by the daemon for
-// selected 4xx responses.
-//
-// Both shapes use `.catchall(z.unknown())` on the outer and
-// `z.enum(...).or(z.string())` on `reason` so Stage 2 can add new reason
-// codes without breaking existing clients. Tests pin the currently-known enum
-// values; unknown values parse successfully.
-// ---------------------------------------------------------------------------
+// Machine-parseable error bodies for daemon 4xx responses.
+// `.or(z.string())` on `reason` widens the inferred type to `string` so new
+// codes can ship without breaking consumers — the enum documents the
+// currently-known set, it does not narrow the TS type at call sites.
 
 export const AuthErrorSchema = z
   .object({

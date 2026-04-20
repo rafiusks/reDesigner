@@ -32,6 +32,20 @@ describe('CorsErrorSchema', () => {
       true,
     )
   })
+
+  test('accepts unknown reason (forward-compat via .or(z.string()))', () => {
+    const r = CorsErrorSchema.safeParse({ error: 'cors', reason: 'future-reason-code' })
+    expect(r.success).toBe(true)
+  })
+
+  test('accepts unknown top-level field via catchall', () => {
+    const r = CorsErrorSchema.safeParse({
+      error: 'cors',
+      reason: 'malformed-origin',
+      trace: 'x',
+    })
+    expect(r.success).toBe(true)
+  })
 })
 
 describe('ApiErrorSchema (discriminated union)', () => {
