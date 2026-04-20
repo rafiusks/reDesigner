@@ -85,11 +85,11 @@ The storage key is `s_<uuid>` generated fresh at daemon start. An observer who c
 
 ### 4.4 Host literal-set allowlist + `Sec-Fetch-Site` compound predicate
 
-The daemon validates both: (a) the request Origin is in the extension's literal ID set, and (b) `Sec-Fetch-Site: extension`. This compound predicate blocks DNS-rebind attacks where a page at an evil domain tricks the browser into sending ambient credentials to localhost. A rebind victim cannot forge the `Sec-Fetch-Site: extension` header from a page context.
+The daemon validates both: (a) the request Origin is in the extension's literal ID set, and (b) `Sec-Fetch-Site` is either `cross-site` (the value Chrome sends for `chrome-extension://`-to-`localhost` fetches) or `none` (header absent, e.g. some service-worker-originated or non-browser clients). This compound predicate blocks DNS-rebind attacks where a page at an evil domain tricks the browser into sending ambient credentials to localhost: a rebind victim cannot forge `Sec-Fetch-Site: cross-site` from a page context, because a page running on the rebinded hostname will have the browser stamp `same-origin` or `same-site` on its requests to that same host.
 
 ### 4.5 Subprotocol bearer — not a page cookie
 
-The session token is carried as the WebSocket subprotocol string (`redesigner-<token>`), not as an HTTP cookie or a URL query parameter. This means:
+The session token is carried in the WebSocket `Sec-WebSocket-Protocol` offer as a k8s-style bearer entry (`base64url.bearer.authorization.redesigner.dev.<token>`), alongside a version-negotiation subprotocol (`redesigner-v1`) — i.e. the client offers `['redesigner-v1', 'base64url.bearer.authorization.redesigner.dev.<token>']`. The token is not carried as an HTTP cookie or URL query parameter. This means:
 
 - Page-level scripts cannot set or read the subprotocol without going through the extension's runtime message channel (isolated from page context).
 - Standard CSRF patterns that abuse `SameSite=Lax` cookies do not apply.
@@ -97,7 +97,11 @@ The session token is carried as the WebSocket subprotocol string (`redesigner-<t
 
 ### 4.6 HMAC session token + `serverNonceEcho` verification
 
-The session token is HMAC-signed by the daemon. The daemon's WebSocket upgrade handler verifies the HMAC and a server-issued nonce echo on every upgrade, providing replay resistance. A captured token from a previous session (different nonce epoch) is rejected.
+Three distinct checks compose to give replay resistance:
+
+- **Exchange-time HMAC (daemon `/exchange`):** the extension sends an HMAC-signed request (over `clientNonce || serverNonce || iatBE8`) to `/exchange`, and on successful verification the daemon mints a session token bound to that nonce epoch. The HMAC is checked at this HTTP POST only, not on every WS upgrade.
+- **WS upgrade bearer check (daemon `ws/events.ts`):** the WebSocket upgrade handler does not re-verify the HMAC. It extracts the bearer from the `Sec-WebSocket-Protocol` offer and runs `compareToken` against the active session token minted by the most recent `/exchange`. A stale token from a previous session fails this comparison.
+- **`serverNonceEcho` (SW-side check):** the daemon's first `hello` frame echoes the `serverNonce` that was returned by the `/exchange` response which minted the current session. The service worker verifies this echo against the nonce it remembers from that exchange; a mismatch means the exchange response was replayed or the daemon does not hold the session the SW thinks it does, and the WS is aborted. This is a client-side check, not a daemon-side one.
 
 ### 4.7 TOFU ext-ID pinning
 
@@ -131,7 +135,7 @@ A co-installed extension with localhost permission can contact the daemon before
 
 ### 5.3 DevTools WebSocket header visibility
 
-The WebSocket upgrade handshake, including `Sec-WebSocket-Protocol: redesigner-<token>`, is visible in Chrome DevTools → Network → WS → Headers.
+The WebSocket upgrade handshake, including `Sec-WebSocket-Protocol: redesigner-v1, base64url.bearer.authorization.redesigner.dev.<token>`, is visible in Chrome DevTools → Network → WS → Headers.
 
 **Accepted because:** DevTools access implies the attacker already has the developer's local browser session and machine. No meaningful escalation beyond that access.
 
