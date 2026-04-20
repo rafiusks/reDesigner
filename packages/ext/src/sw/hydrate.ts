@@ -10,9 +10,11 @@
  *  - Fast-path persisted keys are stored inside the session record:
  *      tabs, activePickClientId, activePickCounter, lastSeq, instanceId,
  *      bootstrapToken, sessionToken, sessionExp.
- *  - Slow-path persisted keys (recent, manifestCache.seq, backoff.*,
- *    dormantReason) live in chrome.storage.local — non-sensitive,
+ *  - Slow-path persisted keys live in chrome.storage.local — non-sensitive,
  *    1-second debounced write cadence handled elsewhere.
+ *    v0: hydrates `recent` + `dormantReason` only. `manifestCache.seq` and
+ *    `backoff.*` are read lazily by their respective consumers (Tasks 25/27)
+ *    to avoid hydrate-time coupling to subsystems that aren't booted yet.
  *
  * On failure (setAccessLevel throw, storage read throw, Zod parse fail):
  *  - setAccessLevel throw: swallow and continue (older Chrome fallback).
