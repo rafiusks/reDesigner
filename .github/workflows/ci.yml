@@ -69,10 +69,12 @@ jobs:
       - run: pnpm -r run lint
       # Build before typecheck/test: downstream packages (vite, mcp, daemon,
       # ext) import @redesigner/core through packages/core/dist/, not source
-      # (exports field points at compiled JS). Without this step, tsc cannot
-      # resolve @redesigner/core on a fresh runner. pnpm -r honors workspace
-      # topology, so core + daemon build before their consumers.
-      - run: pnpm -r run build
+      # (exports field points at compiled JS). Without this, tsc cannot
+      # resolve @redesigner/core on a fresh runner. Scope to packages/ so
+      # examples/playground (a vite app, not a published artifact) is not
+      # in the critical path of downstream consumers. pnpm honors workspace
+      # topology so core + daemon build before their consumers.
+      - run: pnpm --filter './packages/*' run build
       - run: pnpm -r run typecheck
       - run: pnpm -r run test
       - run: pnpm --filter @redesigner/vite run test:parallelism
