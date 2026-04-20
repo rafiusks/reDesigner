@@ -101,4 +101,26 @@ export class EventBus {
     }
     // TODO post-drain hello rebroadcast so ext fetches a fresh snapshot.
   }
+
+  /**
+   * Close all connected WS subscribers with the given close code and reason.
+   *
+   * Used by the graceful-shutdown path to deliver 1012 (server restart) to
+   * any subscriber that is still connected when the daemon begins shutdown.
+   * Called after broadcasting the `shutdown` frame so the client can
+   * distinguish a server-restart close from a network failure.
+   */
+  closeAllSubscribers(code: number, reason: string): void {
+    for (const sub of this.subscribers) {
+      try {
+        sub.ws.close(code, reason)
+      } catch {
+        try {
+          sub.ws.terminate()
+        } catch {
+          // already gone; nothing to clean up
+        }
+      }
+    }
+  }
 }

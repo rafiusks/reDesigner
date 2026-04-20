@@ -21,6 +21,9 @@ export interface ShutdownOpts {
   drainDeadlineMs?: number
 }
 
+// RFC 6455 §7.4.1: 1012 means the server is restarting / going away.
+const WS_CLOSE_SERVER_RESTART = 1012
+
 /**
  * Orchestrate graceful shutdown.
  *
@@ -40,11 +43,19 @@ export async function shutdownGracefully(opts: ShutdownOpts, reason: string): Pr
   // 1. Stop accepting new connections (soft — already-accepted sockets continue).
   opts.server.unref()
 
-  // 2. Broadcast shutdown frame so subscribers can distinguish from net failure.
+  // 2. Broadcast shutdown frame so subscribers can distinguish from net failure,
+  //    then close all WS connections with 1012 (server restart/maintenance per
+  //    RFC 6455 §7.4.1). Ordering: broadcast first so the client sees the
+  //    structured shutdown frame before the close frame.
   try {
     opts.eventBus.broadcast({ type: 'shutdown', payload: { reason } })
   } catch (err) {
     opts.logger.warn('[shutdown] broadcast failed', { err: String(err) })
+  }
+  try {
+    opts.eventBus.closeAllSubscribers(WS_CLOSE_SERVER_RESTART, 'server restart')
+  } catch (err) {
+    opts.logger.warn('[shutdown] closeAllSubscribers failed', { err: String(err) })
   }
 
   // 3. Reject pending RPCs — they release slots inside RpcCorrelation.reject.

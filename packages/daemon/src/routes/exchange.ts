@@ -87,6 +87,25 @@ export interface ExchangeRouteHandle {
   handler: (req: IncomingMessage, res: ServerResponse, reqId: string) => Promise<void>
   isSessionActive: (extId: string, sessionToken: string) => boolean
   getTrustedExtId: () => string | null
+  /**
+   * Rotate the active session for an ext-ID.
+   * Called by /revalidate after minting a new session token to keep the shared
+   * activeSessions map consistent. Mirrors what the exchange handler does
+   * internally on a successful exchange.
+   */
+  rotateSession: (extId: string, newSessionToken: string) => void
+  /**
+   * Check if a clientNonce has already been consumed and, if not, consume it.
+   * Returns true if the nonce was fresh (and is now marked used), false if
+   * it was a replay. Shared between /exchange and /revalidate so nonces
+   * cannot be replayed across routes.
+   */
+  consumeNonce: (clientNonce: string) => boolean
+  /**
+   * Expose the current bootstrapEpochId so /revalidate can namespace its
+   * nonce check under the same epoch.
+   */
+  getBootstrapEpochId: () => string
 }
 
 function forbidUnknownExtension(res: ServerResponse, detail: string, reqId: string): void {
@@ -382,6 +401,20 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     },
     getTrustedExtId(): string | null {
       return getPersistedPin()
+    },
+    rotateSession(extId: string, newSessionTokenStr: string): void {
+      activeSessions.set(extId, Buffer.from(newSessionTokenStr, 'utf8'))
+    },
+    consumeNonce(clientNonce: string): boolean {
+      const key = `${bootstrapEpochId}:${clientNonce}`
+      if (consumedNonces.has(key)) return false
+      consumedNonces.add(key)
+      // Bound replay-cache memory (matches the cap in the handler).
+      if (consumedNonces.size > 10_000) consumedNonces.clear()
+      return true
+    },
+    getBootstrapEpochId(): string {
+      return bootstrapEpochId
     },
   }
 }
