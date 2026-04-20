@@ -28,6 +28,13 @@ type HealthResponse = z.infer<typeof HealthResponseSchema>
 export interface RestArgs {
   httpUrl: string
   timeoutMs?: number
+  /**
+   * Chrome extension ID. Sent as X-Redesigner-Ext-Id header when defined.
+   * Daemon falls back to this for session auth when Chrome strips Origin
+   * on privileged-context fetches (Sec-Fetch-Site: none). Caller owns
+   * validity — a non-[a-p]{32} value will 403 malformed-origin.
+   */
+  extId?: string
 }
 
 /**
@@ -50,12 +57,13 @@ function resolveUrl(path: string, httpUrl: string): string {
   return new URL(path, httpUrl).toString()
 }
 
-function makeJsonHeaders(bearer?: string): Record<string, string> {
+function makeJsonHeaders(bearer?: string, extId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json; charset=utf-8',
   }
   if (bearer !== undefined) headers.Authorization = `Bearer ${bearer}`
+  if (extId !== undefined) headers['X-Redesigner-Ext-Id'] = extId
   return headers
 }
 
@@ -137,7 +145,7 @@ export async function postExchange(
       method: 'POST',
       credentials: 'omit',
       cache: 'no-store',
-      headers: makeJsonHeaders(),
+      headers: makeJsonHeaders(undefined, args.extId),
       body: JSON.stringify({
         clientNonce: args.clientNonce,
         bootstrapToken: args.bootstrapToken,
@@ -175,7 +183,7 @@ export async function putSelection(
       method: 'PUT',
       credentials: 'omit',
       cache: 'no-store',
-      headers: makeJsonHeaders(args.sessionToken),
+      headers: makeJsonHeaders(args.sessionToken, args.extId),
       body: JSON.stringify(args.body),
     },
     args.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -200,7 +208,7 @@ export async function getHealth(
       method: 'GET',
       credentials: 'omit',
       cache: 'no-store',
-      headers: makeJsonHeaders(args.sessionToken),
+      headers: makeJsonHeaders(args.sessionToken, args.extId),
     },
     args.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   )
