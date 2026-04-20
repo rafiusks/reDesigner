@@ -34,10 +34,10 @@ import { requireFullHarness } from './_harness'
 
 const EXT_DIST = fileURLToPath(new URL('../../../dist', import.meta.url))
 
-// Canonical 32-lowercase-letter test extension ID that matches the daemon's
-// CHROME_EXT_ORIGIN_REGEX (=/^chrome-extension:\/\/([a-z]{32})$/). Any shorter
+// Canonical 32-a-p-letter test extension ID that matches the daemon's
+// CHROME_EXT_ORIGIN_REGEX (=/^chrome-extension:\/\/([a-p]{32})$/). Any shorter
 // or differently-cased value fails the Origin gate with a 403.
-const TEST_EXT_ORIGIN = 'chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef'
+const TEST_EXT_ORIGIN = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 
 test('@nightly exchange→sessionToken→manifest and selection echo', async () => {
   if (!requireFullHarness()) return

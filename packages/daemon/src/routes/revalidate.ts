@@ -46,14 +46,21 @@ import { compareToken, extractBearer } from '../auth.js'
 import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import { problem, readJsonBody, sendJson, sendProblem } from '../types.js'
-import { applyCorsHeaders, handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
+import {
+  applyCorsHeaders,
+  handlePreflight,
+  noStorePrivate,
+  rejectCookieIfPresent,
+  rejectMalformedOrigin,
+  rejectMissingOrigin,
+} from './cors.js'
 import type { ExchangeRouteHandle } from './exchange.js'
 
 // All Zod schemas at module top-level — CLAUDE.md: in-handler z.object() is a v4 regression cliff.
 const BodySchema = ExchangeRequestSchema
 
-const EXT_ID_REGEX = /^[a-z]{32}$/
-const ORIGIN_REGEX = /^chrome-extension:\/\/([a-z]{32})$/
+const EXT_ID_REGEX = /^[a-p]{32}$/
+const ORIGIN_REGEX = /^chrome-extension:\/\/([a-p]{32})$/
 
 // Per-ext-ID failed-revalidate bucket config.
 // burst 3, rate 0.2/s (1 every 5s): slower than exchange's burst-5/1s because
@@ -156,7 +163,7 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
 
     // OPTIONS preflight — before auth gates.
     if (req.method === 'OPTIONS') {
-      handlePreflight(req, res, 'POST', reqId)
+      handlePreflight(req, res, 'POST')
       return
     }
 
@@ -168,26 +175,23 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
       return
     }
 
-    // Gate 2: Origin must be chrome-extension:// + 32 lowercase letters.
+    // Gate 2: Origin must be chrome-extension://<32 a-p letters>.
+    // Missing vs malformed gets distinct CorsError reason codes so clients
+    // can discriminate (shared contract with /exchange).
     const origin = req.headers.origin
     const originVal = Array.isArray(origin) ? origin[0] : origin
     if (typeof originVal !== 'string') {
-      forbidUnknownExtension(res, 'Origin header missing', reqId, req)
+      rejectMissingOrigin(res)
       return
     }
     const match = ORIGIN_REGEX.exec(originVal)
     if (match === null) {
-      forbidUnknownExtension(
-        res,
-        'Origin must be chrome-extension://<32-lowercase-letters>',
-        reqId,
-        req,
-      )
+      rejectMalformedOrigin(res, req)
       return
     }
     const extId = match[1]
     if (extId === undefined || !EXT_ID_REGEX.test(extId)) {
-      forbidUnknownExtension(res, 'malformed extension ID', reqId, req)
+      rejectMalformedOrigin(res, req)
       return
     }
 

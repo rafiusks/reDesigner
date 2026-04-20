@@ -49,17 +49,24 @@ import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import { clearTrustedExtId, readTrustedExtId, writeTrustedExtId } from '../tofu.js'
 import { problem, readJsonBody, sendJson, sendProblem } from '../types.js'
-import { applyCorsHeaders, handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
+import {
+  applyCorsHeaders,
+  handlePreflight,
+  noStorePrivate,
+  rejectCookieIfPresent,
+  rejectMalformedOrigin,
+  rejectMissingOrigin,
+} from './cors.js'
 
 // All Zod schemas at module top-level - CLAUDE.md: in-handler z.object() is a v4 regression cliff.
 const BodySchema = ExchangeRequestSchema
 
-// chrome-extension IDs are exactly 32 lowercase letters.
-const EXT_ID_REGEX = /^[a-z]{32}$/
+// chrome-extension IDs are exactly 32 characters drawn from a-p (base32 remapped hex).
+const EXT_ID_REGEX = /^[a-p]{32}$/
 // Exported so server.ts + ws/events.ts can parse the extId out of Origin for
 // the session-token auth fallback. Single source of truth for what the
 // /exchange handler considers a valid Origin.
-export const CHROME_EXT_ORIGIN_REGEX = /^chrome-extension:\/\/([a-z]{32})$/
+export const CHROME_EXT_ORIGIN_REGEX = /^chrome-extension:\/\/([a-p]{32})$/
 const ORIGIN_REGEX = CHROME_EXT_ORIGIN_REGEX
 
 // Per-(Origin, peerAddr) failed-exchange bucket config.
@@ -287,7 +294,7 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     // OPTIONS preflight — handled before all other gates so browsers can
     // complete the CORS handshake without bearer credentials.
     if (req.method === 'OPTIONS') {
-      handlePreflight(req, res, 'POST', reqId)
+      handlePreflight(req, res, 'POST')
       return
     }
 
@@ -309,22 +316,17 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     const origin = req.headers.origin
     const originVal = Array.isArray(origin) ? origin[0] : origin
     if (typeof originVal !== 'string') {
-      forbidUnknownExtension(res, 'Origin header missing', reqId, req)
+      rejectMissingOrigin(res)
       return
     }
     const match = ORIGIN_REGEX.exec(originVal)
     if (match === null) {
-      forbidUnknownExtension(
-        res,
-        'Origin must be chrome-extension://<32-lowercase-letters>',
-        reqId,
-        req,
-      )
+      rejectMalformedOrigin(res, req)
       return
     }
     const extId = match[1]
     if (extId === undefined || !EXT_ID_REGEX.test(extId)) {
-      forbidUnknownExtension(res, 'malformed extension ID', reqId, req)
+      rejectMalformedOrigin(res, req)
       return
     }
 

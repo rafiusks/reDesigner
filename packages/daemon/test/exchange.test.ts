@@ -145,8 +145,8 @@ function rawPost(
   })
 }
 
-const EXT_ID_A = 'abcdefghijklmnopabcdefghijklmnop' // 32 lowercase letters
-const EXT_ID_B = 'qrstuvwxyzabcdefqrstuvwxyzabcdef' // distinct 32 lowercase letters
+const EXT_ID_A = 'abcdefghijklmnopabcdefghijklmnop' // 32 a-p letters
+const EXT_ID_B = 'pabcdefghijklmnopabcdefghijklmno' // distinct 32 a-p letters
 const ORIGIN_A = `chrome-extension://${EXT_ID_A}`
 const ORIGIN_B = `chrome-extension://${EXT_ID_B}`
 

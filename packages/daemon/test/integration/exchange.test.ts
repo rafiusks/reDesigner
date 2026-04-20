@@ -10,11 +10,18 @@
  *   2. sessionToken from exchange works on GET /manifest → not 401
  *   3. Invalid bootstrapToken → 401
  *   4. Missing Origin → 403
+ *   4a. Origin with q-z characters (invalid ext ID) → 403
+ *   4b. Origin with only a-p characters (valid ext ID) → 200
  *   5. clientNonce replay → 401
  *   6. Rate-limit pre-consumption → 429 (drains 5 burst tokens then asserts)
  *   7. POST /__redesigner/revalidate after successful exchange → new sessionToken
  *   8. GET /__redesigner/exchange without Bearer → 401 (unauth path; 401 is stricter than 405)
  *   9. GET /__redesigner/exchange with valid Bearer → 405 Allow: POST (authed but wrong method)
+ *  10. Bogus bearer on authenticated route → 401 body has error=auth, reason=token-unknown
+ *  10a. Bogus bearer + valid X-Redesigner-Ext-Id → 401 body reason=extid-mismatch
+ *  11. 403 body on malformed-origin exchange request → error=cors, reason=malformed-origin
+ *  12. Missing Origin on exchange request → 403 body error=cors, reason=missing-origin
+ *  13. Revalidate missing/malformed Origin → CorsError-shaped 403 (shared contract)
  */
 
 import crypto from 'node:crypto'
@@ -34,8 +41,8 @@ import { cleanupTempDirs, randomTempDir } from '../helpers/randomTempDir.js'
 // Constants
 // ---------------------------------------------------------------------------
 
-// 32 lowercase letters — required by ORIGIN_REGEX in exchange.ts
-const CHROME_EXT_ORIGIN = 'chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef'
+// 32 a-p letters — required by ORIGIN_REGEX in exchange.ts
+const CHROME_EXT_ORIGIN = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 
 const FETCH_TIMEOUT_MS = 3000
 
@@ -398,6 +405,47 @@ describe('exchange + revalidate integration', () => {
   })
 
   // -------------------------------------------------------------------------
+  // 4a. Origin with q-z characters (invalid ext ID) → 403
+  // -------------------------------------------------------------------------
+  test('Origin with q-z characters (not valid Chrome ext ID) → 403', async () => {
+    const clientNonce = crypto.randomUUID()
+    // q-z letters fall outside [a-p]; digits also fail the char class.
+    const invalidOrigin = 'chrome-extension://abcdefghijklmnopqrstuvwxyz123456'
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/exchange',
+      {
+        Origin: invalidOrigin,
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+  })
+
+  // -------------------------------------------------------------------------
+  // 4b. Origin with only a-p characters (valid ext ID) → 200
+  // -------------------------------------------------------------------------
+  test('Origin with only a-p characters (valid Chrome ext ID) → 200', async () => {
+    const clientNonce = crypto.randomUUID()
+    const validOrigin = 'chrome-extension://pabcdefghijklmnopabcdefghijklmno' // all a-p
+    const res = await fetch(`${h.url}/__redesigner/exchange`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: validOrigin,
+        'Sec-Fetch-Site': 'cross-site',
+        Host: `127.0.0.1:${h.port}`,
+      },
+      body: JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(res.status).toBe(200)
+    const data = ExchangeResponseSchema.parse(await res.json())
+    expect(data.sessionToken).toBeTruthy()
+  })
+
+  // -------------------------------------------------------------------------
   // 5. clientNonce replay → 401
   // -------------------------------------------------------------------------
   test('clientNonce replay → 401 on second use', async () => {
@@ -580,5 +628,124 @@ describe('exchange + revalidate integration', () => {
     expect(res.status).toBe(405)
     const allow = res.headers.get('allow') ?? ''
     expect(allow).toContain('POST')
+  })
+
+  // -------------------------------------------------------------------------
+  // 10. Bogus bearer on authenticated route → 401 body error=auth, reason=token-unknown
+  //     (no valid extId source means the session fallback never runs)
+  // -------------------------------------------------------------------------
+  test('401 body has error=auth, reason=token-unknown for bogus bearer', async () => {
+    const res = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: 'Bearer bogus-token-12345',
+        Host: `127.0.0.1:${h.port}`,
+        Connection: 'close',
+        // No Origin, no X-Redesigner-Ext-Id — no extId source available.
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.error).toBe('auth')
+    expect(body.reason).toBe('token-unknown')
+  })
+
+  // -------------------------------------------------------------------------
+  // 10a. Bogus bearer + valid-format X-Redesigner-Ext-Id → extid-mismatch
+  //      (extId present → session lookup runs → no session matches bearer)
+  // -------------------------------------------------------------------------
+  test('401 body has error=auth, reason=extid-mismatch when extId is supplied but session missing', async () => {
+    const res = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: 'Bearer bogus-token-12345',
+        'X-Redesigner-Ext-Id': 'abcdefghijklmnopabcdefghijklmnop',
+        Host: `127.0.0.1:${h.port}`,
+        Connection: 'close',
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.error).toBe('auth')
+    expect(body.reason).toBe('extid-mismatch')
+  })
+
+  // -------------------------------------------------------------------------
+  // 11. 403 body on malformed-origin exchange request → error=cors, reason=malformed-origin
+  //     (q-z characters in ext ID fail [a-p]{32} regex)
+  // -------------------------------------------------------------------------
+  test('403 body has error=cors, reason=malformed-origin for q-z Origin', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/exchange',
+      {
+        Origin: 'chrome-extension://abcdefghijklmnopqrstuvwxyz123456',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('malformed-origin')
+  })
+
+  // -------------------------------------------------------------------------
+  // 12. Missing Origin on exchange request → 403 body error=cors, reason=missing-origin
+  // -------------------------------------------------------------------------
+  test('403 body has error=cors, reason=missing-origin for missing Origin header', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/exchange',
+      {
+        // Deliberately no Origin header
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('missing-origin')
+  })
+
+  // -------------------------------------------------------------------------
+  // 13. Revalidate CORS gates share the CorsError contract with exchange.
+  // -------------------------------------------------------------------------
+  test('revalidate 403 body is CorsError-shaped on missing Origin', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/revalidate',
+      {
+        'Sec-Fetch-Site': 'cross-site',
+        Authorization: 'Bearer noop',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('missing-origin')
+  })
+
+  test('revalidate 403 body is CorsError-shaped on malformed Origin', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/revalidate',
+      {
+        Origin: 'chrome-extension://abcdefghijklmnopqrstuvwxyz123456',
+        'Sec-Fetch-Site': 'cross-site',
+        Authorization: 'Bearer noop',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('malformed-origin')
   })
 })

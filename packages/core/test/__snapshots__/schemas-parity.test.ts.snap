@@ -1,5 +1,101 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`ApiErrorSchema JSON Schema matches committed golden 1`] = `
+{
+  "oneOf": [
+    {
+      "additionalProperties": {},
+      "properties": {
+        "error": {
+          "const": "auth",
+          "type": "string",
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "extid-mismatch",
+                "token-unknown",
+                "token-tofu-fail",
+              ],
+              "type": "string",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+      },
+      "required": [
+        "error",
+        "reason",
+      ],
+      "type": "object",
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "error": {
+          "const": "cors",
+          "type": "string",
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "malformed-origin",
+                "missing-origin",
+              ],
+              "type": "string",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+      },
+      "required": [
+        "error",
+        "reason",
+      ],
+      "type": "object",
+    },
+  ],
+}
+`;
+
+exports[`AuthErrorSchema JSON Schema matches committed golden 1`] = `
+{
+  "additionalProperties": {},
+  "properties": {
+    "error": {
+      "const": "auth",
+      "type": "string",
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "extid-mismatch",
+            "token-unknown",
+            "token-tofu-fail",
+          ],
+          "type": "string",
+        },
+        {
+          "type": "string",
+        },
+      ],
+    },
+  },
+  "required": [
+    "error",
+    "reason",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`CloseReasonSchema JSON Schema matches committed golden 1`] = `
 {
   "additionalProperties": false,
@@ -76,6 +172,37 @@ exports[`ComponentHandleSchema JSON Schema matches committed golden 1`] = `
     "domPath",
     "parentChain",
     "timestamp",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`CorsErrorSchema JSON Schema matches committed golden 1`] = `
+{
+  "additionalProperties": {},
+  "properties": {
+    "error": {
+      "const": "cors",
+      "type": "string",
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "malformed-origin",
+            "missing-origin",
+          ],
+          "type": "string",
+        },
+        {
+          "type": "string",
+        },
+      ],
+    },
+  },
+  "required": [
+    "error",
+    "reason",
   ],
   "type": "object",
 }
@@ -589,7 +716,7 @@ exports[`SelectionPutBodySchema JSON Schema matches committed golden 1`] = `
       "type": "string",
     },
     "meta": {
-      "additionalProperties": false,
+      "additionalProperties": {},
       "properties": {
         "source": {
           "enum": [
@@ -674,7 +801,6 @@ exports[`SelectionPutBodySchema JSON Schema matches committed golden 1`] = `
   },
   "required": [
     "nodes",
-    "clientId",
   ],
   "type": "object",
 }
@@ -682,7 +808,7 @@ exports[`SelectionPutBodySchema JSON Schema matches committed golden 1`] = `
 
 exports[`SelectionPutResponseSchema JSON Schema matches committed golden 1`] = `
 {
-  "additionalProperties": false,
+  "additionalProperties": {},
   "properties": {
     "acceptedAt": {
       "exclusiveMinimum": 0,

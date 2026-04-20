@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 /**
  * Error taxonomy.
  *
@@ -94,3 +96,31 @@ export const RpcToApiErrorCode: Partial<Record<RpcErrorCode, ApiErrorCode>> = Ob
     .filter(([, rpc]) => rpc !== null)
     .map(([api, rpc]) => [rpc, api]),
 ) as Partial<Record<RpcErrorCode, ApiErrorCode>>
+
+// Machine-parseable error bodies for daemon 4xx responses.
+// `.or(z.string())` on `reason` widens the inferred type to `string` so new
+// codes can ship without breaking consumers — the enum documents the
+// currently-known set, it does not narrow the TS type at call sites.
+
+// `token-tofu-fail` is reserved for the Stage 2 migration of the TOFU
+// rejection path from problem+json to AuthError; no daemon code path emits
+// it today. Consumers should treat unknown reason strings as transient and
+// fall back on the discriminant `error` field.
+export const AuthErrorSchema = z
+  .object({
+    error: z.literal('auth'),
+    reason: z.enum(['extid-mismatch', 'token-unknown', 'token-tofu-fail']).or(z.string()),
+  })
+  .catchall(z.unknown())
+export type AuthError = z.infer<typeof AuthErrorSchema>
+
+export const CorsErrorSchema = z
+  .object({
+    error: z.literal('cors'),
+    reason: z.enum(['malformed-origin', 'missing-origin']).or(z.string()),
+  })
+  .catchall(z.unknown())
+export type CorsError = z.infer<typeof CorsErrorSchema>
+
+export const ApiErrorSchema = z.discriminatedUnion('error', [AuthErrorSchema, CorsErrorSchema])
+export type ApiError = z.infer<typeof ApiErrorSchema>

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
+import type { AuthError } from '@redesigner/core/schemas'
 import { UNAUTHORIZED_HEADERS, compareToken, extractBearer } from './auth.js'
 import { hostAllow } from './hostAllow.js'
 import { problem, sendProblem } from './problem.js'
@@ -135,13 +136,13 @@ export function createDaemonServer(opts: ServerOptions): {
     if (method === 'OPTIONS') {
       // Dynamic tab-scoped path.
       if (TABS_SELECTION_RE.test(pathname)) {
-        handlePreflight(req, res, 'PUT', reqId)
+        handlePreflight(req, res, 'PUT')
         return
       }
       // Static path lookup.
       const entry = OPTIONS_TABLE.find((e) => e.path === pathname)
       if (entry !== undefined) {
-        handlePreflight(req, res, entry.methods, reqId)
+        handlePreflight(req, res, entry.methods)
         return
       }
       // Unknown path: 404 with Vary.
@@ -183,6 +184,9 @@ export function createDaemonServer(opts: ServerOptions): {
     //      Unauth bucket applies ONLY when both checks miss.
     const providedBearer = extractBearer(req)
     let authed = compareToken(providedBearer, opts.token)
+    // Track whether a session-auth attempt was made with a recognized extId.
+    // Used to emit the correct 401 reason: extid-mismatch vs token-unknown.
+    let extIdFound = false
     if (!authed && providedBearer !== undefined) {
       let extId: string | null = null
       const originHeader = req.headers.origin
@@ -194,9 +198,10 @@ export function createDaemonServer(opts: ServerOptions): {
       if (extId === null) {
         const raw = req.headers['x-redesigner-ext-id']
         const val = Array.isArray(raw) ? raw[0] : raw
-        if (typeof val === 'string' && /^[a-z]{32}$/.test(val)) extId = val
+        if (typeof val === 'string' && /^[a-p]{32}$/.test(val)) extId = val
       }
       if (extId !== null) {
+        extIdFound = true
         authed = exchangeRoute.isSessionActive(extId, providedBearer)
       }
     }
@@ -206,8 +211,17 @@ export function createDaemonServer(opts: ServerOptions): {
         send429(res, req, reqId, unauthBucket)
         return
       }
-      // 401 — empty body + WWW-Authenticate; problem.detail omitted to avoid info leak.
-      sendProblem(res, problem(401, 'Unauthorized', undefined, reqId), req, UNAUTHORIZED_HEADERS)
+      // 401 — machine-parseable AuthError body + WWW-Authenticate header.
+      // Content-type is application/json (not problem+json) so clients can parse
+      // the body with AuthErrorSchema.safeParse; the discriminated union replaces
+      // RFC 7807 on this path. reason distinguishes extid-mismatch (bearer+extId
+      // tried but no matching session) from token-unknown (no bearer, bearer
+      // without extId, or bearer that didn't match root token).
+      const reason: AuthError['reason'] = extIdFound ? 'extid-mismatch' : 'token-unknown'
+      const authErrorBody: AuthError = { error: 'auth', reason }
+      applyCorsHeaders(res, req)
+      res.setHeader('WWW-Authenticate', UNAUTHORIZED_HEADERS['WWW-Authenticate'])
+      sendJson(res, 401, authErrorBody)
       return
     }
 

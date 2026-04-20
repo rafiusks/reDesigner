@@ -1,6 +1,9 @@
 import {
+  ApiErrorSchema,
+  AuthErrorSchema,
   CloseReasonSchema,
   ComponentHandleSchema,
+  CorsErrorSchema,
   ExchangeRequestSchema,
   ExchangeResponseSchema,
   HandshakeSchema,
@@ -26,8 +29,11 @@ function toJSONSchemaFor(schema: z.ZodTypeAny): unknown {
 }
 
 const schemas: [string, z.ZodTypeAny, string][] = [
+  ['ApiErrorSchema', ApiErrorSchema, 'errors::ApiErrorSchema'],
+  ['AuthErrorSchema', AuthErrorSchema, 'errors::AuthErrorSchema'],
   ['CloseReasonSchema', CloseReasonSchema, 'closeReasons::CloseReasonSchema'],
   ['ComponentHandleSchema', ComponentHandleSchema, 'schema::ComponentHandleSchema'],
+  ['CorsErrorSchema', CorsErrorSchema, 'errors::CorsErrorSchema'],
   ['ExchangeRequestSchema', ExchangeRequestSchema, 'handshake::ExchangeRequestSchema'],
   ['ExchangeResponseSchema', ExchangeResponseSchema, 'handshake::ExchangeResponseSchema'],
   ['HandshakeSchema', HandshakeSchema, 'handshake::HandshakeSchema'],

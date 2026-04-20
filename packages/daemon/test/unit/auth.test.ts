@@ -153,8 +153,8 @@ async function listenOnEphemeral(
 describe('401 response body — no length oracle across malformed auth inputs', () => {
   // "No length oracle" means all bad-auth variants produce bodies of the same byte length
   // so an attacker cannot distinguish (missing / short / long / wrong scheme) from body size.
-  // Each body contains a unique reqId in the `instance` field, so raw bytes differ;
-  // we compare structure (same keys, same non-instance field values) and byte length.
+  // The body is now a machine-parseable AuthError: {error:'auth', reason:'token-unknown'}.
+  // Since the body is always the same JSON, all variants produce identical bytes.
   const bearer = crypto.randomBytes(32).toString('base64url')
   const token = Buffer.from(bearer, 'utf8')
   let handle: Awaited<ReturnType<typeof listenOnEphemeral>>
@@ -167,11 +167,8 @@ describe('401 response body — no length oracle across malformed auth inputs', 
   })
 
   interface Auth401Body {
-    status: number
-    code: string
-    title: string
-    type: string
-    instance: string
+    error: string
+    reason: string
     detail?: string
   }
 
@@ -226,14 +223,14 @@ describe('401 response body — no length oracle across malformed auth inputs', 
     }
   })
 
-  it('all four variants have status=401 and code=Unauthorized', async () => {
+  it('all four variants have error=auth and reason=token-unknown (AuthError shape)', async () => {
     const a = await get401()
     const b = await get401({ Authorization: 'Bearer short' })
     const c = await get401({ Authorization: `Bearer ${'x'.repeat(200)}` })
     const d = await get401({ Authorization: 'Basic foo' })
     for (const { body } of [a, b, c, d]) {
-      expect(body.status).toBe(401)
-      expect(body.code).toBe('Unauthorized')
+      expect(body.error).toBe('auth')
+      expect(body.reason).toBe('token-unknown')
     }
   })
 })

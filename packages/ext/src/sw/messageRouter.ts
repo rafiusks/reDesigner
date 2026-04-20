@@ -5,14 +5,21 @@
  * addListener registration — so the async handler body lives here.
  */
 
+import { ensureSession } from './ensureSession.js'
 import type { PanelPort } from './panelPort.js'
-import { postExchange } from './rest.js'
+import { persistSelection } from './persistSelection.js'
 
 export interface TabHandshake {
   wsUrl: string
   httpUrl: string
   bootstrapToken: string
   editor: string
+  /**
+   * Epoch-ms timestamp of when the register handler ran. Used to detect
+   * cold-start races (pick arriving <100ms after register). Must be
+   * Date.now() not performance.now() — SW wakes reset the perf origin.
+   */
+  registeredAtEpochMs: number
 }
 
 export interface TabSession {
@@ -24,26 +31,7 @@ export interface MessageRouterDeps {
   panelPort: PanelPort
   tabHandshakes: Map<number, TabHandshake>
   tabSessions: Map<number, TabSession>
-}
-
-const SESSION_REFRESH_LEAD_MS = 60_000
-
-async function ensureSession(
-  tabId: number,
-  hs: TabHandshake,
-  deps: MessageRouterDeps,
-): Promise<string> {
-  const cached = deps.tabSessions.get(tabId)
-  if (cached && cached.exp - Date.now() > SESSION_REFRESH_LEAD_MS) {
-    return cached.sessionToken
-  }
-  const res = await postExchange({
-    httpUrl: hs.httpUrl,
-    clientNonce: crypto.randomUUID(),
-    bootstrapToken: hs.bootstrapToken,
-  })
-  deps.tabSessions.set(tabId, { sessionToken: res.sessionToken, exp: res.exp })
-  return res.sessionToken
+  extId: string
 }
 
 type SendResponse = (response?: unknown) => void
@@ -83,6 +71,7 @@ export async function routeMessage(
           httpUrl: m.httpUrl,
           bootstrapToken: m.bootstrapToken,
           editor: m.editor,
+          registeredAtEpochMs: Date.now(),
         })
       }
       let origin: string | null = null
@@ -111,7 +100,7 @@ export async function routeMessage(
       return
     }
     try {
-      const sessionToken = await ensureSession(tabId, hs, deps)
+      const { sessionToken } = await ensureSession(tabId, hs, deps)
       // Chrome strips the Origin header on extension-SW GETs with
       // Authorization (privileged-context privacy mitigation — observed as
       // `Sec-Fetch-Site: none`). The daemon's session-auth fallback can't
@@ -122,7 +111,7 @@ export async function routeMessage(
       const res = await fetch(new URL('/manifest', hs.httpUrl).toString(), {
         headers: {
           Authorization: `Bearer ${sessionToken}`,
-          'X-Redesigner-Ext-Id': chrome.runtime.id,
+          'X-Redesigner-Ext-Id': deps.extId,
         },
         credentials: 'omit',
         cache: 'no-store',
@@ -142,12 +131,38 @@ export async function routeMessage(
   }
 
   if (type === 'selection') {
-    const handle = (msg as { handle?: unknown }).handle
+    const rawHandle = (msg as { handle?: unknown }).handle
     if (typeof tabId === 'number' && typeof windowId === 'number') {
-      deps.panelPort.push(windowId, tabId, { selection: handle ?? null })
-      console.log('[redesigner:sw] selection pushed', { tabId, windowId })
+      try {
+        try {
+          const maybePromise = deps.panelPort.push(windowId, tabId, {
+            selection: rawHandle ?? null,
+          })
+          Promise.resolve(maybePromise).catch((err: unknown) => {
+            console.warn('[redesigner:sw] panelPort.push rejected', {
+              name: err instanceof Error ? err.name : 'unknown',
+              message: err instanceof Error ? err.message : String(err),
+            })
+          })
+        } catch (err) {
+          console.warn('[redesigner:sw] panelPort.push threw', {
+            name: err instanceof Error ? err.name : 'unknown',
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
+      } finally {
+        // INVARIANT: total async work stays under Chrome's 5-minute per-event cap.
+        await persistSelection(tabId, rawHandle, deps)
+      }
     }
-    sendResponse({ ok: true })
+    try {
+      sendResponse({ ok: true })
+    } catch (err) {
+      console.warn('[redesigner:sw] sendResponse threw (port likely closed)', {
+        tabId,
+        message: err instanceof Error ? err.message : String(err),
+      })
+    }
     return
   }
 
