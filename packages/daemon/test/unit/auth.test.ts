@@ -288,8 +288,9 @@ describe('logger token redaction', () => {
   it('redacts token at depth 1', () => {
     const logger = createLogger({ file: logFile, maxBytes: 1_000_000 })
     logger.info('msg', { token: 'secret-value-123' })
-    const [entry] = readLog() as Array<Record<string, unknown>>
-    expect(entry.token).toBe('[REDACTED]')
+    const entry = (readLog() as Array<Record<string, unknown>>)[0]
+    expect(entry).toBeDefined()
+    expect(entry?.token).toBe('[REDACTED]')
   })
 
   it('does not leak token value in any field at depth 1', () => {
@@ -317,10 +318,11 @@ describe('logger token redaction', () => {
   it('preserves non-token fields at depth 1', () => {
     const logger = createLogger({ file: logFile, maxBytes: 1_000_000 })
     logger.info('msg', { token: 'secret', pid: 42, name: 'test' })
-    const [entry] = readLog() as Array<Record<string, unknown>>
-    expect(entry.token).toBe('[REDACTED]')
-    expect(entry.pid).toBe(42)
-    expect(entry.name).toBe('test')
+    const entry = (readLog() as Array<Record<string, unknown>>)[0]
+    expect(entry).toBeDefined()
+    expect(entry?.token).toBe('[REDACTED]')
+    expect(entry?.pid).toBe(42)
+    expect(entry?.name).toBe('test')
   })
 
   it('preserves non-token nested object fields', () => {

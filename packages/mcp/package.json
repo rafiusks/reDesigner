@@ -12,7 +12,7 @@
   "engines": { "node": ">=22.0.0" },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run",
     "test:update-snapshot": "UPDATE_SNAPSHOT=1 vitest run schema-snapshot",
     "lint": "biome check ."

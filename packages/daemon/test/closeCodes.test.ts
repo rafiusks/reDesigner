@@ -613,24 +613,28 @@ describe('/revalidate — standalone route', () => {
     const logger = makeLogger()
     const projectRoot = randomTempDir(`redesigner-revalidate-${crypto.randomUUID()}-`)
 
-    const exchangeRoute = createExchangeRoute({
+    const exchangeOpts: Parameters<typeof createExchangeRoute>[0] = {
       rootToken,
       projectRoot,
       logger,
       bootstrapToken,
-      now: opts?.now,
-      boot: opts?.boot,
-      trustAnyExtension: opts?.trustAnyExtension,
-      pinnedExtensionId: opts?.pinnedExtensionId,
-    })
+    }
+    if (opts?.now !== undefined) exchangeOpts.now = opts.now
+    if (opts?.boot !== undefined) exchangeOpts.boot = opts.boot
+    if (opts?.trustAnyExtension !== undefined)
+      exchangeOpts.trustAnyExtension = opts.trustAnyExtension
+    if (opts?.pinnedExtensionId !== undefined)
+      exchangeOpts.pinnedExtensionId = opts.pinnedExtensionId
+    const exchangeRoute = createExchangeRoute(exchangeOpts)
 
-    const revalidateRoute = createRevalidateRoute({
+    const revalidateOpts: Parameters<typeof createRevalidateRoute>[0] = {
       exchange: exchangeRoute,
       rootToken,
       projectRoot,
       logger,
-      now: opts?.now,
-    })
+    }
+    if (opts?.now !== undefined) revalidateOpts.now = opts.now
+    const revalidateRoute = createRevalidateRoute(revalidateOpts)
 
     const server = http.createServer((req, res) => {
       const reqId = crypto.randomBytes(8).toString('hex')

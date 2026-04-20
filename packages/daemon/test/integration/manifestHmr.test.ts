@@ -124,11 +124,10 @@ async function openWsAndAwaitHello(h: DaemonHarness): Promise<FrameCollector> {
     try {
       const f = JSON.parse(String(data)) as { type?: unknown; seq?: unknown; payload?: unknown }
       if (typeof f.type === 'string') {
-        frames.push({
-          type: f.type,
-          seq: typeof f.seq === 'number' ? f.seq : undefined,
-          payload: f.payload,
-        })
+        const frame: { type: string; seq?: number; payload?: unknown } = { type: f.type }
+        if (typeof f.seq === 'number') frame.seq = f.seq
+        if (f.payload !== undefined) frame.payload = f.payload
+        frames.push(frame)
       }
     } catch {
       // Ignore non-JSON frames.
