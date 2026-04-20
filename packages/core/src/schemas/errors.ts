@@ -124,4 +124,4 @@ export const CorsErrorSchema = z
 export type CorsError = z.infer<typeof CorsErrorSchema>
 
 export const ApiErrorSchema = z.discriminatedUnion('error', [AuthErrorSchema, CorsErrorSchema])
-export type ApiErrorBody = z.infer<typeof ApiErrorSchema>
+export type ApiError = z.infer<typeof ApiErrorSchema>
