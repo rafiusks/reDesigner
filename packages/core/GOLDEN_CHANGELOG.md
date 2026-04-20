@@ -1,3 +1,2 @@
-- 2026-04-20 — initial goldens for handshake.json + exchange + PUT /selection schemas (Task 4 of chrome-extension-v0 plan).
-- 2026-04-20 — meta.source required when meta present (Task 4 review fix).
-- 2026-04-20 — HandshakeSchema daemonVersion widened to string | null (Task 14 quality fix).
+## 2026-04-20
+Initial contract goldens committed for CloseReasonSchema, ComponentHandleSchema, ExchangeRequestSchema, ExchangeResponseSchema, HandshakeSchema, JsonRpcErrorSchema, JsonRpcNotificationSchema, JsonRpcRequestSchema, JsonRpcResponseSchema, ManifestSchema, SelectionFileSchema, SelectionPutBodySchema, SelectionPutResponseSchema, WsFrameSchema using z.toJSONSchema() with $schema key stripped.

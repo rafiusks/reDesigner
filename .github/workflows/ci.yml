@@ -74,6 +74,18 @@ jobs:
       - run: pnpm -r run typecheck
       - run: pnpm -r run test
       - run: pnpm --filter @redesigner/vite run test:parallelism
+      - name: Zod version single-major guard
+        shell: bash
+        run: |
+          RESOLVED=$(grep -A1 "specifier: \^3.25.0 || \^4.0.0" pnpm-lock.yaml | grep "version:" | head -1 | awk '{print $2}')
+          EXPECTED=$(cat .zod-version)
+          MAJOR=$(echo "$RESOLVED" | cut -d. -f1)
+          if [ "$MAJOR" != "$EXPECTED" ]; then
+            echo "Zod major drift: resolved=$MAJOR expected=$EXPECTED"
+            exit 1
+          fi
+      - name: Ext contract tests
+        run: pnpm --filter @redesigner/ext test -- test/contract/
       - name: Fixture update guard (three-dot diff)
         shell: bash
         run: |

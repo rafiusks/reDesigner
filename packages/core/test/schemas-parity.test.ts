@@ -1,9 +1,18 @@
 import {
+  CloseReasonSchema,
+  ComponentHandleSchema,
   ExchangeRequestSchema,
   ExchangeResponseSchema,
   HandshakeSchema,
+  JsonRpcErrorSchema,
+  JsonRpcNotificationSchema,
+  JsonRpcRequestSchema,
+  JsonRpcResponseSchema,
+  ManifestSchema,
+  SelectionFileSchema,
   SelectionPutBodySchema,
   SelectionPutResponseSchema,
+  WsFrameSchema,
 } from '@redesigner/core/schemas'
 import { expect, test } from 'vitest'
 import { z } from 'zod'
@@ -16,13 +25,28 @@ function toJSONSchemaFor(schema: z.ZodTypeAny): unknown {
   return rest
 }
 
-test.each([
-  ['HandshakeSchema', HandshakeSchema],
-  ['ExchangeRequestSchema', ExchangeRequestSchema],
-  ['ExchangeResponseSchema', ExchangeResponseSchema],
-  ['SelectionPutBodySchema', SelectionPutBodySchema],
-  ['SelectionPutResponseSchema', SelectionPutResponseSchema],
-])('%s JSON Schema matches committed golden', (name, schema) => {
+const schemas: [string, z.ZodTypeAny, string][] = [
+  ['CloseReasonSchema', CloseReasonSchema, 'closeReasons::CloseReasonSchema'],
+  ['ComponentHandleSchema', ComponentHandleSchema, 'schema::ComponentHandleSchema'],
+  ['ExchangeRequestSchema', ExchangeRequestSchema, 'handshake::ExchangeRequestSchema'],
+  ['ExchangeResponseSchema', ExchangeResponseSchema, 'handshake::ExchangeResponseSchema'],
+  ['HandshakeSchema', HandshakeSchema, 'handshake::HandshakeSchema'],
+  ['JsonRpcErrorSchema', JsonRpcErrorSchema, 'wsFrames::JsonRpcErrorSchema'],
+  ['JsonRpcNotificationSchema', JsonRpcNotificationSchema, 'wsFrames::JsonRpcNotificationSchema'],
+  ['JsonRpcRequestSchema', JsonRpcRequestSchema, 'wsFrames::JsonRpcRequestSchema'],
+  ['JsonRpcResponseSchema', JsonRpcResponseSchema, 'wsFrames::JsonRpcResponseSchema'],
+  ['ManifestSchema', ManifestSchema, 'schema::ManifestSchema'],
+  ['SelectionFileSchema', SelectionFileSchema, 'schema::SelectionFileSchema'],
+  ['SelectionPutBodySchema', SelectionPutBodySchema, 'selection::SelectionPutBodySchema'],
+  [
+    'SelectionPutResponseSchema',
+    SelectionPutResponseSchema,
+    'selection::SelectionPutResponseSchema',
+  ],
+  ['WsFrameSchema', WsFrameSchema, 'wsFrames::WsFrameSchema'],
+]
+
+test.each(schemas)('%s JSON Schema matches committed golden', (name, schema) => {
   expect(toJSONSchemaFor(schema as z.ZodTypeAny)).toMatchSnapshot()
 })
 
