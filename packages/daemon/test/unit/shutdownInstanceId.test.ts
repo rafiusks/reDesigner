@@ -58,13 +58,15 @@ async function listenOnEphemeral(ctxOverrides?: Partial<RouteContext>): Promise<
   const token = Buffer.from(bearer, 'utf8')
   const ctx = makeCtx(ctxOverrides)
 
+  const bootstrapToken = Buffer.from(crypto.randomBytes(32))
+  const rootToken = Buffer.from(crypto.randomBytes(32))
   // Two-phase: discover port then re-bind so Host check is self-consistent.
-  const probe = createDaemonServer({ port: 0, token, ctx })
+  const probe = createDaemonServer({ port: 0, token, bootstrapToken, rootToken, ctx })
   await new Promise<void>((resolve) => probe.server.listen(0, '127.0.0.1', () => resolve()))
   const assigned = (probe.server.address() as AddressInfo).port
   await probe.close()
 
-  const real = createDaemonServer({ port: assigned, token, ctx })
+  const real = createDaemonServer({ port: assigned, token, bootstrapToken, rootToken, ctx })
   await new Promise<void>((resolve) => real.server.listen(assigned, '127.0.0.1', () => resolve()))
   return {
     url: `http://127.0.0.1:${assigned}`,

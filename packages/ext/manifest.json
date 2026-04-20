@@ -58,7 +58,7 @@
       "description": "Arm picker"
     }
   },
-  "permissions": ["scripting", "storage", "tabs", "sidePanel", "alarms"],
+  "permissions": ["scripting", "storage", "tabs", "sidePanel", "alarms", "idle"],
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",

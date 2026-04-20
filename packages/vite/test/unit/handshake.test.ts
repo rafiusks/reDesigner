@@ -82,7 +82,7 @@ function makeOptions(
 ): HandshakeMiddlewareOptions {
   return {
     viteServerPort: () => 5173,
-    bootstrap: createBootstrapState(),
+    bootstrap: createBootstrapState({ readBootstrap: () => ({ bootstrapToken: 'a'.repeat(43) }) }),
     getDaemonInfo: () => ({ port: 4919, serverVersion: '0.0.1' }),
     pluginVersion: '0.0.0',
     editor: 'vscode',
@@ -330,20 +330,6 @@ describe('/__redesigner/handshake.json middleware', () => {
     expect(captured.headers.vary).toBe('Origin, Sec-Fetch-Site, Sec-Fetch-Dest')
   })
 
-  it('bootstrap.rotate() returns a NEW token and subsequent GET serves it', () => {
-    const state = createBootstrapState()
-    const t0 = state.current()
-    const mw = createHandshakeMiddleware(makeOptions({ bootstrap: state }))
-    const r1 = mockReqRes({ host: 'localhost:5173', secFetchDest: 'empty', secFetchSite: 'none' })
-    mw(r1.req, r1.res, () => {})
-    expect(r1.captured.headers['x-redesigner-bootstrap']).toBe(t0)
-    const t1 = state.rotate()
-    expect(t1).not.toBe(t0)
-    const r2 = mockReqRes({ host: 'localhost:5173', secFetchDest: 'empty', secFetchSite: 'none' })
-    mw(r2.req, r2.res, () => {})
-    expect(r2.captured.headers['x-redesigner-bootstrap']).toBe(t1)
-  })
-
   it('wsUrl points at daemon /events; httpUrl points at daemon root', () => {
     const mw = createHandshakeMiddleware(
       makeOptions({ getDaemonInfo: () => ({ port: 42000, serverVersion: '9.9.9' }) }),
@@ -362,6 +348,45 @@ describe('/__redesigner/handshake.json middleware', () => {
     expect(body.wsUrl).toBe('ws://127.0.0.1:42000/events')
     expect(body.httpUrl).toBe('http://127.0.0.1:42000')
     expect(body.daemonVersion).toBe('9.9.9')
+  })
+
+  it('injected readBootstrap token appears in body and X-Redesigner-Bootstrap header', () => {
+    const injectedToken = 'b'.repeat(43)
+    const mw = createHandshakeMiddleware(
+      makeOptions({
+        bootstrap: createBootstrapState({
+          readBootstrap: () => ({ bootstrapToken: injectedToken }),
+        }),
+      }),
+    )
+    const { req, res, captured } = mockReqRes({
+      host: 'localhost:5173',
+      secFetchDest: 'empty',
+      secFetchSite: 'none',
+    })
+    mw(req, res, () => {})
+    expect(captured.statusCode).toBe(200)
+    const headerToken = captured.headers['x-redesigner-bootstrap']
+    const body = JSON.parse(captured.body) as { bootstrapToken: string }
+    expect(headerToken).toBe(injectedToken)
+    expect(body.bootstrapToken).toBe(injectedToken)
+  })
+
+  it('readBootstrap returns null → 503 extension-disconnected', () => {
+    const mw = createHandshakeMiddleware(
+      makeOptions({
+        bootstrap: createBootstrapState({ readBootstrap: () => null }),
+      }),
+    )
+    const { req, res, captured } = mockReqRes({
+      host: 'localhost:5173',
+      secFetchDest: 'empty',
+      secFetchSite: 'none',
+    })
+    mw(req, res, () => {})
+    expect(captured.statusCode).toBe(503)
+    const body = JSON.parse(captured.body) as { apiErrorCode: string }
+    expect(body.apiErrorCode).toBe('extension-disconnected')
   })
 
   it('request to a non-matching path → next() called', () => {

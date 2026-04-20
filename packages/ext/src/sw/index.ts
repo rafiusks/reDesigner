@@ -14,7 +14,23 @@
  *    parse/read errors to pending sendResponse callers via .catch().
  */
 
+import { handleActionClicked } from './actionHandler.js'
 import { hydrate } from './hydrate.js'
+import { routeMessage } from './messageRouter.js'
+import type { TabHandshake } from './messageRouter.js'
+import { createPanelPort } from './panelPort.js'
+
+// Module-level panel-snapshot cache. One instance for the SW's lifetime; the
+// cache survives across panel open/close cycles on the same SW generation.
+const panelPort = createPanelPort()
+
+// Per-tab handshake cache keyed by tabId. Populated by the content script's
+// `register` message; consumed by `get-manifest` to hit the daemon's
+// `GET /manifest` with the right Bearer token.
+const tabHandshakes = new Map<number, TabHandshake>()
+// Per-tab session cache, minted via POST /__redesigner/exchange on first
+// daemon request and reused until near-expiry.
+const tabSessions = new Map<number, { sessionToken: string; exp: number }>()
 
 // ---------------------------------------------------------------------------
 // Boot epoch — increment synchronously at module load. Type-guard the write.
@@ -47,14 +63,9 @@ chrome.runtime.onStartup.addListener(() => {
   // Stub — full logic lands in later Phase 6 tasks.
 })
 
-chrome.runtime.onMessage.addListener((_msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   readyPromise
-    .then(() => {
-      // Dispatch stub — actual message routing lands in Task 24+.
-      // Respond with an empty ack so tests that don't care about the payload
-      // see a well-formed response object.
-      sendResponse({ ok: true })
-    })
+    .then(() => routeMessage(msg, sender, sendResponse, { panelPort, tabHandshakes, tabSessions }))
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err)
       sendResponse({ error: message })
@@ -63,16 +74,34 @@ chrome.runtime.onMessage.addListener((_msg, _sender, sendResponse) => {
   return true
 })
 
-chrome.runtime.onConnect.addListener((_port) => {
-  // Stub — panel + CS RPC port wiring lands in later tasks.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'panel') {
+    panelPort.onConnect(port)
+    return
+  }
+  // Other port names (content-script RPC, etc.) land in later tasks.
 })
 
-chrome.action.onClicked.addListener((_tab) => {
-  // Stub — Task 28 fleshes this out.
+chrome.action.onClicked.addListener((tab) => {
+  // chrome.sidePanel.open MUST be synchronous within the user gesture; no
+  // await before this call. handleActionClicked is also synchronous.
+  handleActionClicked(tab)
 })
 
-chrome.commands.onCommand.addListener((_command) => {
-  // Stub — Task 28.
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== 'arm-picker') return
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+    const tab = tabs[0]
+    const tabId = tab?.id
+    if (typeof tabId !== 'number') {
+      console.warn('[redesigner:sw] arm-picker: no active tab')
+      return
+    }
+    chrome.tabs.sendMessage(tabId, { type: 'arm-picker' }).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.warn('[redesigner:sw] arm-picker sendMessage failed', { tabId, message })
+    })
+  })
 })
 
 chrome.tabs.onActivated.addListener((_info) => {

@@ -191,18 +191,17 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
 
   function hasOpenModalAncestor(): boolean {
     // Any open <dialog> in modal mode, any aria-modal="true", or any element
-    // with `inert` in the ancestor chain up to <html>.
+    // with `inert` in the ancestor chain up to <html>. Picker host itself
+    // carries aria-modal="true" for a11y — exclude it from matches.
     try {
-      if (document.querySelector(':modal')) return true
+      const modal = document.querySelector(':modal')
+      if (modal && modal !== host) return true
     } catch {
       /* ignore */
     }
-    if (document.querySelector('[aria-modal="true"]')) return true
-    // Inert scan: walk from body or any element chains. Cheap check: look for
-    // any element with `inert` attribute. A fine-grained ancestor-walk would
-    // require knowing "of what" — since the picker host is in top layer and
-    // we only care about whether the page is in a modal state, `inert` on
-    // anything is a reasonable trigger in practice (tier-3 fixtures cover this).
+    for (const el of document.querySelectorAll('[aria-modal="true"]')) {
+      if (el !== host) return true
+    }
     if (document.querySelector('[inert]')) return true
     return false
   }

@@ -70,8 +70,10 @@ async function main(): Promise<void> {
     logger,
   )
 
-  // Step 5: token + instanceId.
+  // Step 5: token + bootstrapToken + rootToken + instanceId.
   const token = crypto.randomBytes(32).toString('base64url')
+  const bootstrapToken = crypto.randomBytes(32).toString('base64url')
+  const rootToken = Buffer.from(crypto.randomBytes(32)) // raw 32 bytes — HMAC key, never leaves the daemon
   const instanceId = crypto.randomUUID()
 
   // Step 6: discover ephemeral port; assert strict loopback + integer port.
@@ -142,7 +144,13 @@ async function main(): Promise<void> {
   }
 
   // Step 11: construct real server on discovered port and listen.
-  daemon = createDaemonServer({ port, token: Buffer.from(token, 'utf8'), ctx })
+  daemon = createDaemonServer({
+    port,
+    token: Buffer.from(token, 'utf8'),
+    bootstrapToken: Buffer.from(bootstrapToken, 'utf8'),
+    rootToken,
+    ctx,
+  })
   await new Promise<void>((resolve, reject) => {
     const onError = (err: Error): void => reject(err)
     daemon?.server.once('error', onError)
@@ -158,6 +166,7 @@ async function main(): Promise<void> {
     pid: process.pid,
     port,
     token,
+    bootstrapToken,
     projectRoot,
     instanceId,
   })

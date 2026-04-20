@@ -39,6 +39,8 @@ export interface PanelPortHookSnapshot {
   readonly pickerArmed: boolean
   readonly recent: readonly ComponentHandle[]
   readonly version: number
+  /** Origin of the tab the panel is attached to once the CS has registered. */
+  readonly serverUrl: string | null
 }
 
 interface PushSnapshotMessage {
@@ -75,6 +77,7 @@ function makeDefaultSnapshot(windowId: number, tabId: number): PanelPortHookSnap
     pickerArmed: false,
     recent: Object.freeze([]) as readonly ComponentHandle[],
     version: 0,
+    serverUrl: null,
   })
 }
 
@@ -129,6 +132,17 @@ function openPort(windowId: number, tabId: number, entry: StoreEntry, connect: C
   const port = connect()
   entry.port = port
 
+  // The panel's chrome.runtime.connect({name:'panel'}) produces a port whose
+  // `sender.tab` is undefined on the SW side (the panel isn't a tab). Send an
+  // explicit hello so the SW can key the snapshot cache correctly and push
+  // the initial snapshot back.
+  try {
+    port.postMessage({ type: 'panel-hello', windowId, tabId })
+  } catch {
+    // Port may disconnect between creation and first postMessage on slow hosts;
+    // the onDisconnect handler below schedules a reconnect via microtask.
+  }
+
   port.onMessage.addListener((raw) => {
     if (!isPushSnapshotMessage(raw)) return
     const snap = raw.snapshot
@@ -140,6 +154,7 @@ function openPort(windowId: number, tabId: number, entry: StoreEntry, connect: C
       selection: snap.selection,
       pickerArmed: snap.pickerArmed,
       recent: snap.recent,
+      serverUrl: snap.serverUrl,
     })
   })
 

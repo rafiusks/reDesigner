@@ -19,8 +19,9 @@ the Chrome extension and verifying the result via the MCP shim from Claude Code.
 pnpm --filter @redesigner/ext build
 ```
 
-Expected: `packages/ext/dist/` populated with `manifest.json`, `src/sw/index.js`,
-content scripts, and panel assets.
+Expected: `packages/ext/dist/` populated with `manifest.json`,
+`service-worker-loader.js` (the CRXJS-generated SW entry), per-panel chunks
+under `assets/`, icon PNGs, and `src/panel/index.html`.
 
 ### 2. Load the extension in Chrome
 
@@ -40,12 +41,15 @@ pnpm --filter @redesigner/playground dev
 
 Expected: Vite starts on `http://localhost:5173` (or the next free port). The
 `@redesigner/vite` plugin calls `child_process.fork` to spawn the daemon. The
-plugin prefixes all daemon stdout with `[daemon] ` and the daemon emits a
-structured JSON ready line, so look for something like:
+daemon's stdout ready line is consumed internally by the bridge, so the
+terminal only shows the vite banner. Confirm the daemon actually started by
+either:
 
-```
-[daemon] {"type":"ready","port":<N>,"instanceId":"<uuid>"}
-```
+- Tailing `examples/playground/.redesigner/daemon.log`. Success looks like:
+  ```json
+  {"ts":<unix-ms>,"level":"info","msg":"[daemon] ready","pid":<N>,"port":<N>,"instanceId":"<uuid>","handoffPath":"..."}
+  ```
+- Or checking the handoff file (next block).
 
 The handoff file is written at
 `$TMPDIR/com.redesigner.<uid>/<projectHash>/daemon-v1.json` on macOS
@@ -72,7 +76,7 @@ curl -s "http://localhost:$PORT/health" -H "Authorization: Bearer $TOKEN"
 Expected output:
 
 ```json
-{ "ok": true }
+{"ok":true}
 ```
 
 ### 4. Register the MCP shim with Claude Code
@@ -123,25 +127,32 @@ Expected: the extension sends:
 PUT http://localhost:<port>/tabs/<tabId>/selection
 ```
 
-with body:
+with body (shape per `SelectionPutBodySchema` in `@redesigner/core`):
 
 ```json
 {
+  "clientId": "<uuidv4>",
   "nodes": [
     {
-      "displayName": "Button",
+      "id": "<opaque-1-128-char-id>",
+      "componentName": "Button",
       "filePath": "examples/playground/src/components/Button.tsx",
       "lineRange": [1, 10],
-      "columnRange": [0, 0]
+      "domPath": "body > div > button",
+      "parentChain": ["App", "Page"],
+      "timestamp": 1681234567890
     }
-  ]
+  ],
+  "meta": { "source": "picker" }
 }
 ```
+
+(`meta` is optional; `lineRange` is `[start, end]` of 1-based line numbers.)
 
 Response body:
 
 ```json
-{ "selectionSeq": 1, "acceptedAt": 1681234567890 }
+{"selectionSeq":1,"acceptedAt":1681234567890}
 ```
 
 The side panel updates and shows the selected component with a "Claude Code can
@@ -199,3 +210,88 @@ The PUT body failed schema validation. Open DevTools → Network, find the PUT t
 After a successful first run, copy the anonymised terminal + DevTools output
 into `examples/playground/EXT_DOGFOOD_LOG.md` and commit it. That file is not
 shipped in v0.
+
+## Token-sync dogfood (T8) — exchange → session → SelectionCard
+
+These steps verify the full daemon↔vite token-sync flow introduced in the
+fix/daemon-vite-token-sync branch. They assume you have completed steps 1–3
+above (extension built, loaded, playground running).
+
+### 1. Start the playground (daemon forks automatically)
+
+```bash
+pnpm --filter @redesigner/vite dev
+```
+
+The `@redesigner/vite` plugin forks the daemon and writes
+`bootstrapToken` into the handshake middleware at
+`/__redesigner/handshake.json`. The daemon also writes its full handoff file
+(port + rootToken) under the OS runtime dir as usual.
+
+### 2. Load the built extension
+
+- Navigate to `chrome://extensions`
+- Enable **Developer mode**
+- Click **Load unpacked** → select `packages/ext/dist/`
+
+### 3. Open the playground and the side panel
+
+Open `http://localhost:5173/` in Chrome. Click the reDesigner toolbar icon to
+open the side panel (or right-click → "Open side panel" if available in your
+Chrome build).
+
+Expected: the Welcome section reads **"Detected: http://localhost:5173 — open?"**.
+This means the SW completed the bootstrap→exchange handshake and the daemon
+accepted the minted session token.
+
+### 4. Arm the picker
+
+Press **Alt+Shift+D** (the `arm-picker` command from `manifest.json`).
+
+Expected:
+- Toolbar icon updates to the "armed" badge variant.
+- Hovering over the page shows a pick highlight outline on instrumented elements.
+- SW DevTools console shows `[redesigner:sw] arm-picker dispatched`.
+
+### 5. Click a component
+
+Hover over the pricing section and click. Any element with a
+`data-redesigner-loc` attribute is a valid target (the vite plugin injects
+these during dev).
+
+Expected:
+- The side panel transitions from Welcome to **SelectionCard**.
+- SelectionCard shows:
+  - Green pip: **"Claude Code can see this"**
+  - Component name (e.g. `PricingCard`)
+  - File path + line (e.g. `src/components/PricingCard.tsx:3`)
+- SW DevTools console shows `[redesigner:sw] selection pushed` with **no 401**.
+
+### 6. Verify network calls
+
+Open **DevTools → Network** tab (filter by XHR/Fetch):
+
+| Call | Expected status |
+|---|---|
+| `POST /__redesigner/exchange` | 200 |
+| `GET /manifest` (daemon port) | 200 |
+| `PUT /tabs/<tabId>/selection` (daemon port) | 200 |
+
+All three must complete without 401 errors. A 401 on `GET /manifest` means
+the session token was not forwarded correctly from exchange; a 401 on `PUT`
+means the session bearer was not accepted by the daemon's REST auth chain.
+
+### 7. Automated nightly spec
+
+The same flow is covered by the Playwright nightly spec at
+`packages/ext/test/e2e/nightly/exchange-live.spec.ts`. To run it with a full
+harness:
+
+```bash
+PW_FULL_HARNESS=1 pnpm --filter @redesigner/ext test:e2e
+```
+
+The spec exercises exchange, session bearer on GET /manifest, and a synthetic
+PUT /tabs/:tabId/selection + GET /selection round-trip. True click-through UI
+automation (keyboard chord → overlay → SelectionCard renders) is tracked as a
+post-v0 follow-up.

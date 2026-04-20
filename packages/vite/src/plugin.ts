@@ -194,7 +194,7 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         logger: makeLogger(logger),
       })
       const daemon = new DaemonBridge()
-      const bootstrap = createBootstrapState()
+      const bootstrap = createBootstrapState({ readBootstrap: () => daemon.readBootstrap() })
       const editor = resolveEditor(options.editor, logger)
       client = {
         writer,
@@ -307,7 +307,7 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         const payload = {
           wsUrl: daemonInfo ? `ws://127.0.0.1:${daemonInfo.port}/events` : '',
           httpUrl: daemonInfo ? `http://127.0.0.1:${daemonInfo.port}` : '',
-          bootstrapToken: String(client.bootstrap.current()),
+          bootstrapToken: client.bootstrap.current() ?? '',
           editor: client.editor,
           pluginVersion: PLUGIN_VERSION,
           daemonVersion: daemonInfo?.serverVersion ?? null,

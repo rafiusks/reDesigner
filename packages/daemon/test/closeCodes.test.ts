@@ -88,14 +88,22 @@ async function listenOnEphemeral(token: Buffer): Promise<{
   close: () => Promise<void>
 }> {
   const bearer = Buffer.from(token).toString('utf8')
+  const bootstrapToken = Buffer.from(crypto.randomBytes(32))
+  const rootToken = Buffer.from(crypto.randomBytes(32))
   // Two-step port allocation: find a free port then bind for real.
-  const probe = createDaemonServer({ port: 0, token, ctx: makeCtx() })
+  const probe = createDaemonServer({ port: 0, token, bootstrapToken, rootToken, ctx: makeCtx() })
   await new Promise<void>((resolve) => probe.server.listen(0, '127.0.0.1', () => resolve()))
   const assigned = (probe.server.address() as AddressInfo).port
   await probe.close()
 
   const realCtx = makeCtx()
-  const real = createDaemonServer({ port: assigned, token, ctx: realCtx })
+  const real = createDaemonServer({
+    port: assigned,
+    token,
+    bootstrapToken,
+    rootToken,
+    ctx: realCtx,
+  })
   await new Promise<void>((resolve) => real.server.listen(assigned, '127.0.0.1', () => resolve()))
   return {
     url: `http://127.0.0.1:${assigned}`,
@@ -472,14 +480,22 @@ describe('close-code: 1012 — server restart/maintenance (graceful shutdown)', 
   it('connected WS subscriber receives 1012 on graceful shutdown broadcast', async () => {
     const bearer = crypto.randomBytes(32).toString('base64url')
     const token = Buffer.from(bearer, 'utf8')
+    const bootstrapToken = Buffer.from(crypto.randomBytes(32))
+    const rootToken = Buffer.from(crypto.randomBytes(32))
 
-    const probe = createDaemonServer({ port: 0, token, ctx: makeCtx() })
+    const probe = createDaemonServer({ port: 0, token, bootstrapToken, rootToken, ctx: makeCtx() })
     await new Promise<void>((resolve) => probe.server.listen(0, '127.0.0.1', () => resolve()))
     const probePort = (probe.server.address() as AddressInfo).port
     await probe.close()
 
     const realCtx = makeCtx()
-    const real = createDaemonServer({ port: probePort, token, ctx: realCtx })
+    const real = createDaemonServer({
+      port: probePort,
+      token,
+      bootstrapToken,
+      rootToken,
+      ctx: realCtx,
+    })
     await new Promise<void>((resolve) =>
       real.server.listen(probePort, '127.0.0.1', () => resolve()),
     )

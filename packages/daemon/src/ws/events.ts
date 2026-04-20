@@ -6,6 +6,8 @@ import { compareToken, extractBearer, extractSubprotocolToken } from '../auth.js
 import { hostAllow } from '../hostAllow.js'
 import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
+import { CHROME_EXT_ORIGIN_REGEX } from '../routes/exchange.js'
+import type { ExchangeRouteHandle } from '../routes/exchange.js'
 import type { EventBus } from '../state/eventBus.js'
 import type { ManifestWatcher } from '../state/manifestWatcher.js'
 import type { SelectionState } from '../state/selectionState.js'
@@ -62,6 +64,8 @@ export interface EventsOptions {
   server: Server
   port: number
   expectedToken: Buffer
+  /** Provides isSessionActive() for the session-token auth fallback. */
+  exchangeRoute: ExchangeRouteHandle
   eventBus: EventBus
   selectionState: SelectionState
   manifestWatcher: ManifestWatcher
@@ -314,9 +318,24 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
     const chosenSubproto = `redesigner-v${negotiatedV}`
 
     // 4d. Bearer auth — prefer subprotocol bearer (browser shape), fall back
-    //     to Authorization header (native clients). Uniform 1002 on failure.
+    //     to Authorization header (native clients). If the bearer doesn't
+    //     match the daemon authToken, treat it as a session token minted via
+    //     /__redesigner/exchange — valid iff the Origin is a pinned
+    //     chrome-extension:// and isSessionActive(extId, bearer) is true.
+    //     Uniform 1002 on failure.
     const providedBearer = subproto.bearer ?? extractBearer(req)
-    if (!compareToken(providedBearer, opts.expectedToken)) {
+    let authed = compareToken(providedBearer, opts.expectedToken)
+    if (!authed && providedBearer !== undefined) {
+      const originHeader = req.headers.origin
+      const originVal = Array.isArray(originHeader) ? originHeader[0] : originHeader
+      if (typeof originVal === 'string') {
+        const match = CHROME_EXT_ORIGIN_REGEX.exec(originVal)
+        if (match?.[1]) {
+          authed = opts.exchangeRoute.isSessionActive(match[1], providedBearer)
+        }
+      }
+    }
+    if (!authed) {
       opts.logger.warn('[ws] token mismatch; closing 1002')
       handshakeAndClose(req, socket, head, 1002, 'protocol error', chosenSubproto)
       return
