@@ -47,6 +47,10 @@ function makePort(name: string, recorder: SideEffectRecorder): chrome.runtime.Po
       hasListener(fn: (msg: unknown) => void): boolean {
         return messageListeners.includes(fn)
       },
+      _listeners: messageListeners,
+      _emit(msg: unknown) {
+        for (const fn of messageListeners) fn(msg)
+      },
     } as unknown as chrome.events.Event<(message: unknown) => void>,
     onDisconnect: {
       addListener(fn: () => void) {
@@ -58,6 +62,10 @@ function makePort(name: string, recorder: SideEffectRecorder): chrome.runtime.Po
       },
       hasListener(fn: () => void): boolean {
         return disconnectListeners.includes(fn)
+      },
+      _listeners: disconnectListeners,
+      _emit() {
+        for (const fn of disconnectListeners) fn()
       },
     } as unknown as chrome.events.Event<() => void>,
     postMessage(msg: unknown) {
