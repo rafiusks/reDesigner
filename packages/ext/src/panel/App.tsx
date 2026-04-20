@@ -63,12 +63,15 @@ export function App(props: AppProps): JSX.Element {
           ) : snapshot.status === 'disconnected' ? (
             <EmptyStates reason="disconnected" />
           ) : snapshot.selection ? (
-            <SelectionCard selection={snapshot.selection} />
+            <SelectionCard selection={snapshot.selection} mcpWired={true} />
           ) : (
             <EmptyStates reason="no-selection" />
           )}
           <RecentList recent={snapshot.recent} />
-          <ErrorBanners error={null} />
+          <ErrorBanners
+            reconnecting={snapshot.status === 'resync'}
+            onReloadTab={() => chrome.tabs.reload(snapshot.tabId)}
+          />
           <ShortcutsFooter />
           <Debug tabId={snapshot.tabId} windowId={snapshot.windowId} version={snapshot.version} />
         </>
