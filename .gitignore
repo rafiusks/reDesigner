@@ -15,3 +15,6 @@ pnpm-debug.log
 
 .husky/_
 *.tsbuildinfo
+
+# vitest-browser auto-screenshots on failure
+**/test/**/__screenshots__/
