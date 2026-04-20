@@ -9,8 +9,10 @@
 //   windows-no-ack  — ignores stdin entirely (exercises taskkill fallback).
 const mode = process.argv[2] || 'clean'
 
-process.stdout.write('{"ready":true}\n')
-
+// Register mode-specific handlers BEFORE signalling readiness. Otherwise on
+// slow CI runners the test can deliver SIGTERM between the stdout write and
+// the `process.on('SIGTERM', ...)` line, letting Node's default terminate
+// handler fire instead of the test's intended no-op or exit(0).
 if (mode === 'clean') {
   process.on('SIGTERM', () => process.exit(0))
 }
@@ -19,6 +21,8 @@ if (mode === 'ignore-sigterm') {
   // Trap SIGTERM with a no-op so the OS default terminate is suppressed.
   process.on('SIGTERM', () => {})
 }
+
+process.stdout.write('{"ready":true}\n')
 
 if (mode === 'windows-ack') {
   let buf = ''
