@@ -54,12 +54,12 @@ import { applyCorsHeaders, handlePreflight, noStorePrivate, rejectCookieIfPresen
 // All Zod schemas at module top-level - CLAUDE.md: in-handler z.object() is a v4 regression cliff.
 const BodySchema = ExchangeRequestSchema
 
-// chrome-extension IDs are exactly 32 lowercase letters.
-const EXT_ID_REGEX = /^[a-z]{32}$/
+// chrome-extension IDs are exactly 32 characters drawn from a-p (base32 remapped hex).
+const EXT_ID_REGEX = /^[a-p]{32}$/
 // Exported so server.ts + ws/events.ts can parse the extId out of Origin for
 // the session-token auth fallback. Single source of truth for what the
 // /exchange handler considers a valid Origin.
-export const CHROME_EXT_ORIGIN_REGEX = /^chrome-extension:\/\/([a-z]{32})$/
+export const CHROME_EXT_ORIGIN_REGEX = /^chrome-extension:\/\/([a-p]{32})$/
 const ORIGIN_REGEX = CHROME_EXT_ORIGIN_REGEX
 
 // Per-(Origin, peerAddr) failed-exchange bucket config.

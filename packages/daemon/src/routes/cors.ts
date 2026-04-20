@@ -18,10 +18,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 // HTTP allowlist narrower than WS allowlist (events.ts ORIGIN_ALLOW) — Firefox/VS Code extensions are WS-only in v0.
 // Allowed CORS origin patterns.
-// chrome-extension://<32 lowercase letters> — extension
+// chrome-extension://<32 a-p letters> — extension
 // http://localhost:* and http://127.0.0.1:* — dev tooling
 const ALLOWED_ORIGIN_RE =
-  /^(chrome-extension:\/\/[a-z]{32}|https?:\/\/localhost(:\d+)?|https?:\/\/127\.0\.0\.1(:\d+)?)$/
+  /^(chrome-extension:\/\/[a-p]{32}|https?:\/\/localhost(:\d+)?|https?:\/\/127\.0\.0\.1(:\d+)?)$/
 
 /**
  * Apply CORS response headers to an outgoing response.

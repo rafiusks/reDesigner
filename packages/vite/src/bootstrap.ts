@@ -64,8 +64,8 @@ export interface HandshakeMiddlewareOptions {
 
 export const HANDSHAKE_PATH = '/__redesigner/handshake.json'
 
-// chrome-extension://<32 lowercase letters> — matches daemon's CORS allowlist shape.
-const CHROME_EXT_ORIGIN_RE = /^chrome-extension:\/\/[a-z]{32}$/
+// chrome-extension://<32 a-p letters> — matches daemon's CORS allowlist shape.
+const CHROME_EXT_ORIGIN_RE = /^chrome-extension:\/\/[a-p]{32}$/
 
 function writeNoStoreHeaders(res: ServerResponse): void {
   res.setHeader('Cache-Control', 'no-store, private')

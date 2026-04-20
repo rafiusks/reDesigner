@@ -52,8 +52,8 @@ import type { ExchangeRouteHandle } from './exchange.js'
 // All Zod schemas at module top-level — CLAUDE.md: in-handler z.object() is a v4 regression cliff.
 const BodySchema = ExchangeRequestSchema
 
-const EXT_ID_REGEX = /^[a-z]{32}$/
-const ORIGIN_REGEX = /^chrome-extension:\/\/([a-z]{32})$/
+const EXT_ID_REGEX = /^[a-p]{32}$/
+const ORIGIN_REGEX = /^chrome-extension:\/\/([a-p]{32})$/
 
 // Per-ext-ID failed-revalidate bucket config.
 // burst 3, rate 0.2/s (1 every 5s): slower than exchange's burst-5/1s because

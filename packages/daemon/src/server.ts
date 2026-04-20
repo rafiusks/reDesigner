@@ -194,7 +194,7 @@ export function createDaemonServer(opts: ServerOptions): {
       if (extId === null) {
         const raw = req.headers['x-redesigner-ext-id']
         const val = Array.isArray(raw) ? raw[0] : raw
-        if (typeof val === 'string' && /^[a-z]{32}$/.test(val)) extId = val
+        if (typeof val === 'string' && /^[a-p]{32}$/.test(val)) extId = val
       }
       if (extId !== null) {
         authed = exchangeRoute.isSessionActive(extId, providedBearer)

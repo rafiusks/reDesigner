@@ -312,8 +312,8 @@ function rawPost(
 }
 
 // Well-formed extension IDs for tests.
-const EXT_ID_A = 'abcdefghijklmnopabcdefghijklmnop' // 32 lowercase letters
-const EXT_ID_B = 'qrstuvwxyzabcdefqrstuvwxyzabcdef'
+const EXT_ID_A = 'abcdefghijklmnopabcdefghijklmnop' // 32 a-p letters
+const EXT_ID_B = 'pabcdefghijklmnopabcdefghijklmno'
 const ORIGIN_A = `chrome-extension://${EXT_ID_A}`
 const ORIGIN_B = `chrome-extension://${EXT_ID_B}`
 
@@ -678,7 +678,7 @@ describe('/revalidate — standalone route', () => {
     port: number,
     origin = ORIGIN_A,
   ): Promise<{ sessionToken: string; extId: string; serverNonce: string }> {
-    const extId = /^chrome-extension:\/\/([a-z]{32})$/.exec(origin)?.[1] ?? EXT_ID_A
+    const extId = /^chrome-extension:\/\/([a-p]{32})$/.exec(origin)?.[1] ?? EXT_ID_A
     const res = await rawPost(
       port,
       '/exchange',
