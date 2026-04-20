@@ -150,11 +150,16 @@ jobs:
           # 200KB raw (uncompressed) is the v0 budget; tighten as we grow.
           BUDGET_KB=200
           ASSETS=packages/ext/dist/assets
-          # Pick the largest panel-originated JS chunk in the flat assets dir,
-          # excluding sourcemaps. CRXJS emits hashed `panel-<hash>.js` names.
-          PANEL_CHUNK=$(find "$ASSETS" -maxdepth 1 -type f -name 'panel*.js' \
+          # CRXJS names the panel chunk `index.html-<hash>.js` (from the HTML
+          # entry), not `panel-*`. Proxy "panel bundle size" as "largest JS
+          # chunk in the flat assets dir, sourcemaps excluded" — the panel
+          # is the biggest non-schemas chunk and the other chunks are all
+          # <10KB. `-r` (--no-run-if-empty) prevents an empty find from
+          # running `du` with no args (which would silently `du .` the whole
+          # repo and blow the budget with a multi-GB false positive).
+          PANEL_CHUNK=$(find "$ASSETS" -maxdepth 1 -type f -name '*.js' \
             ! -name '*.map' \
-            -print0 2>/dev/null | xargs -0 du -k 2>/dev/null | sort -n | tail -1 || true)
+            -print0 2>/dev/null | xargs -0 -r du -k 2>/dev/null | sort -n | tail -1 || true)
           if [ -z "$PANEL_CHUNK" ]; then
             echo "::warning::No panel chunk located under $DIST — skipping size-limit"
             exit 0
