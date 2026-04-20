@@ -99,7 +99,7 @@ export async function routeMessage(
       return
     }
     try {
-      const sessionToken = await ensureSession(tabId, hs, deps)
+      const { sessionToken } = await ensureSession(tabId, hs, deps)
       // Chrome strips the Origin header on extension-SW GETs with
       // Authorization (privileged-context privacy mitigation — observed as
       // `Sec-Fetch-Site: none`). The daemon's session-auth fallback can't

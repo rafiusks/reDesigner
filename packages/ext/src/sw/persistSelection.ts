@@ -55,16 +55,12 @@ export async function persistSelection(
   const handle = parsed.data
 
   let cold = false
+  let phase: 'exchange' | 'put' = 'exchange'
   try {
-    const cached = deps.tabSessions.get(tabId)
-    let sessionToken: string
-    if (cached !== undefined && cached.exp - Date.now() > 60_000) {
-      sessionToken = cached.sessionToken
-    } else {
-      cold = true
-      sessionToken = await ensureSession(tabId, hs, deps)
-    }
+    const { sessionToken, cold: sessionCold } = await ensureSession(tabId, hs, deps)
+    cold = sessionCold
 
+    phase = 'put'
     await putSelection({
       httpUrl: hs.httpUrl,
       tabId,
@@ -85,7 +81,7 @@ export async function persistSelection(
   } catch (err) {
     const elapsedMs = Date.now() - startMs
     const message = err instanceof Error ? err.message : String(err)
-    console.warn('[redesigner:sw] persistSelection: PUT failed', { tabId, message })
+    console.warn(`[redesigner:sw] persistSelection: ${phase} failed`, { tabId, message })
     console.log('[redesigner:perf] persistSelection', {
       tabId,
       pickSeq: localPickSeq,

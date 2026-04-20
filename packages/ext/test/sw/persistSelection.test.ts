@@ -127,7 +127,7 @@ describe('persistSelection — never rethrows on putSelection failure', () => {
 
     await expect(persistSelection(TAB_ID, VALID_HANDLE, makeDeps())).resolves.toBeUndefined()
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('PUT failed'),
+      expect.stringContaining('put failed'),
       expect.objectContaining({ tabId: TAB_ID, message: 'network failure' }),
     )
   })
@@ -146,7 +146,7 @@ describe('persistSelection — never rethrows on ensureSession failure', () => {
 
     await expect(persistSelection(TAB_ID, VALID_HANDLE, deps)).resolves.toBeUndefined()
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('PUT failed'),
+      expect.stringContaining('exchange failed'),
       expect.objectContaining({ tabId: TAB_ID, message: 'exchange rejected' }),
     )
   })
@@ -251,7 +251,7 @@ describe('persistSelection — cold-start race warning', () => {
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('[redesigner:race]'),
-      expect.objectContaining({ tabId: TAB_ID }),
+      expect.objectContaining({ tabId: TAB_ID, deltaMs: expect.any(Number) }),
     )
   })
 })

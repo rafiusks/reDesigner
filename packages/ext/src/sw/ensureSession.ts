@@ -5,17 +5,25 @@ const SESSION_REFRESH_LEAD_MS = 60_000
 
 export interface EnsureSessionDeps {
   tabSessions: Map<number, TabSession>
-  extId: string // chrome.runtime.id — passed so postExchange can emit the header
+  extId: string
+}
+
+export interface EnsureSessionResult {
+  sessionToken: string
+  // true when this call triggered a /exchange round-trip, false when the
+  // cached session was still within SESSION_REFRESH_LEAD_MS of expiry.
+  // Owned here so callers can't drift from the freshness predicate.
+  cold: boolean
 }
 
 export async function ensureSession(
   tabId: number,
   hs: TabHandshake,
   deps: EnsureSessionDeps,
-): Promise<string> {
+): Promise<EnsureSessionResult> {
   const cached = deps.tabSessions.get(tabId)
   if (cached && cached.exp - Date.now() > SESSION_REFRESH_LEAD_MS) {
-    return cached.sessionToken
+    return { sessionToken: cached.sessionToken, cold: false }
   }
   const res = await postExchange({
     httpUrl: hs.httpUrl,
@@ -24,5 +32,5 @@ export async function ensureSession(
     extId: deps.extId,
   })
   deps.tabSessions.set(tabId, { sessionToken: res.sessionToken, exp: res.exp })
-  return res.sessionToken
+  return { sessionToken: res.sessionToken, cold: true }
 }
