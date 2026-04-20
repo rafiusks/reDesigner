@@ -2,6 +2,13 @@ import { fork } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+// Re-export handoff helpers so test harnesses (packages/ext Playwright E2E)
+// can resolve the per-project runtime file without duplicating the
+// platform + hash logic. Kept behind the `./handoff` subpath so consumers
+// opt in explicitly.
+export { HandoffSchema, resolveHandoffPath } from './handoff.js'
+export type { Handoff } from './handoff.js'
+
 export interface DaemonHandle {
   pid: number
   shutdown: () => Promise<void>
