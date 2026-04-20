@@ -11,6 +11,7 @@ import {
   noStorePrivate,
   rejectCookieIfPresent,
 } from './routes/cors.js'
+import { handleDebugStateGet } from './routes/debug.js'
 import { handleHealthGet } from './routes/health.js'
 import { handleManifestGet } from './routes/manifest.js'
 import {
@@ -52,6 +53,10 @@ export function createDaemonServer(opts: ServerOptions): {
   server: http.Server
   close: () => Promise<void>
 } {
+  // Env gate for debug routes — evaluated at server-creation time so the server
+  // instance is consistent for its lifetime.
+  const debugEnabled = process.env.REDESIGNER_DEBUG === '1'
+
   // Rate-limit buckets — created per-server so close() isolates state.
   const unauthBucket = createTokenBucket({ ratePerSec: 10, burst: 10 })
   const getBucket = createTokenBucket({ ratePerSec: 100, burst: 100 })
@@ -246,6 +251,21 @@ export function createDaemonServer(opts: ServerOptions): {
         // /shutdown is exempt from per-route rate-limit buckets (operator-only, infrequent).
         applyCorsHeaders(res, req)
         await handleShutdownPost(req, res, opts.ctx)
+        return
+      }
+
+      // /__redesigner/debug/state — env-gated debug snapshot
+      if (method === 'GET' && pathname === '/__redesigner/debug/state') {
+        if (!debugEnabled) {
+          sendProblem(
+            res,
+            problem(404, 'NotFound', `no route for ${method} ${pathname}`, reqId),
+            req,
+          )
+          return
+        }
+        if (!tryBucket(res, req, reqId, getBucket)) return
+        handleDebugStateGet(req, res, opts.ctx)
         return
       }
 

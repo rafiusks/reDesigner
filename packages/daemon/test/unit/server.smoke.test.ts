@@ -84,16 +84,13 @@ describe('createDaemonServer smoke', () => {
     expect(res.headers.get('server')).toBe('@redesigner/daemon/0.0.1')
   })
 
-  it('returns 200 with health body when Authorization is valid', async () => {
+  it('returns 200 { ok: true } when Authorization is valid (spec §3.2)', async () => {
     const res = await fetch(`${handle.url}/health`, {
       headers: { Authorization: `Bearer ${bearer}` },
     })
     expect(res.status).toBe(200)
     const body = (await res.json()) as Record<string, unknown>
-    expect(body).toHaveProperty('serverVersion', '0.0.1')
-    expect(body).toHaveProperty('instanceId', 'test-instance-id')
-    expect(body).toHaveProperty('projectRoot', '/tmp/test-project')
-    expect(body).toHaveProperty('uptimeMs')
+    expect(body).toEqual({ ok: true })
     expect(res.headers.get('server')).toBe('@redesigner/daemon/0.0.1')
   })
 

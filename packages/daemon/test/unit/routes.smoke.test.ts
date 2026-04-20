@@ -104,19 +104,14 @@ describe('GET /selection (empty state)', () => {
 })
 
 describe('GET /health', () => {
-  it('returns 200 with projectRoot, serverVersion, instanceId, uptimeMs', () => {
+  it('returns 200 { ok: true } per spec §3.2', () => {
     const req = mockReq({ url: '/health', method: 'GET' })
     const res = mockRes()
     const ctx = makeCtx()
     handleHealthGet(req, res, ctx)
     expect(res.statusCode).toBe(200)
     const body = JSON.parse(res.body)
-    expect(body).toHaveProperty('projectRoot', '/tmp/test-project')
-    expect(body).toHaveProperty('serverVersion', '0.0.1')
-    expect(body).toHaveProperty('instanceId', 'test-instance-id')
-    expect(body).toHaveProperty('uptimeMs')
-    expect(typeof body.uptimeMs).toBe('number')
-    expect(body.uptimeMs).toBeGreaterThan(0)
+    expect(body).toEqual({ ok: true })
   })
 })
 

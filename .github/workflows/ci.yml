@@ -83,6 +83,20 @@ jobs:
           if echo "$changed" | grep -qE 'test/fixtures/.+/(output\.tsx|expected-manifest\.json)$'; then
             echo "$changed" | grep -q 'test/fixtures/FIXTURE_CHANGELOG.md' || { echo "fixture changed without FIXTURE_CHANGELOG.md entry"; exit 1; }
           fi
+      - name: Redactor pattern guard
+        shell: bash
+        run: |
+          # Grep daemon source for patterns that must never appear in plain-text form.
+          # Lines defining constants/regexes for these patterns are excluded via the
+          # grep -v filter (REDACT, _PREFIX, _RE, // comment lines).
+          while IFS= read -r pat; do
+            [[ -z "$pat" || "$pat" == \#* ]] && continue
+            if grep -rE "$pat" packages/daemon/src/ --include='*.ts' \
+              | grep -v 'REDACT\|_PREFIX\|_RE\b\|// '; then
+              echo "Redactor pattern '$pat' appears unguarded in daemon source"
+              exit 1
+            fi
+          done < .github/redactor-patterns.txt
       - name: No .only / .skip (belt + Biome rule)
         shell: bash
         run: |

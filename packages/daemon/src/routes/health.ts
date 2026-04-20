@@ -5,13 +5,12 @@ import type { RouteContext } from '../types.js'
 export function handleHealthGet(
   _req: IncomingMessage,
   res: ServerResponse,
-  ctx: RouteContext,
+  _ctx: RouteContext,
 ): void {
-  const uptimeMs = Date.now() - ctx.startedAt
-  sendJson(res, 200, {
-    projectRoot: ctx.projectRoot,
-    serverVersion: ctx.serverVersion,
-    instanceId: ctx.instanceId,
-    uptimeMs,
-  })
+  // Spec §3.2: /health returns { ok: true }.
+  // DEFERRED DECISION (task 12): spec calls for session-token-only gating but current
+  // callers (mcp, vite) use the root operator token. Deferring the session-token-only
+  // gate to a follow-up task that updates mcp/vite clients simultaneously.
+  // Current behaviour: root-token gate (inherited from server.ts auth middleware).
+  sendJson(res, 200, { ok: true })
 }

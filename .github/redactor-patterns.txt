@@ -1,0 +1,6 @@
+# Patterns that must never appear in log fixtures or unredacted source output.
+# Lines starting with # are comments and are skipped by the CI grep step.
+# Each pattern is a grep -E extended regex.
+# The CI step skips lines that define constants/regexes for these patterns.
+base64url\.bearer\.authorization\.redesigner\.dev\.[A-Za-z0-9_-]
+authorization:\s*[Bb]earer\s+[A-Za-z0-9_\-]{8,}
