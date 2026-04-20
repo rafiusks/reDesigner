@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Logger } from './logger.js'
+// Re-export problem helpers from problem.ts so existing imports from types.ts keep working.
+export type { ProblemResponse } from './problem.js'
+export { problem, sendProblem } from './problem.js'
 import type { EventBus } from './state/eventBus.js'
 import type { ManifestWatcher } from './state/manifestWatcher.js'
 import type { SelectionState } from './state/selectionState.js'
@@ -16,34 +19,6 @@ export interface RouteContext {
   startedAt: number
   projectRoot: string
   shutdown: () => Promise<void>
-}
-
-export interface ProblemResponse {
-  type: string
-  title: string
-  status: number
-  code: string
-  detail?: string
-  instance: string
-}
-
-export function problem(
-  status: number,
-  code: string,
-  detail: string | undefined,
-  reqId: string,
-): ProblemResponse {
-  const base = {
-    type: `https://redesigner.dev/errors/${code.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()}`,
-    title: code,
-    status,
-    code,
-    instance: `/req/${reqId}`,
-  }
-  if (detail !== undefined) {
-    return { ...base, detail }
-  }
-  return base
 }
 
 export async function readJsonBody(req: IncomingMessage, cap: number): Promise<unknown> {
@@ -68,17 +43,6 @@ export async function readJsonBody(req: IncomingMessage, cap: number): Promise<u
     })
     req.on('error', reject)
   })
-}
-
-export function sendProblem(
-  res: ServerResponse,
-  p: ProblemResponse,
-  extraHeaders?: Record<string, string>,
-): void {
-  res.statusCode = p.status
-  res.setHeader('Content-Type', 'application/problem+json')
-  if (extraHeaders) for (const [k, v] of Object.entries(extraHeaders)) res.setHeader(k, v)
-  res.end(JSON.stringify(p))
 }
 
 export function sendJson(

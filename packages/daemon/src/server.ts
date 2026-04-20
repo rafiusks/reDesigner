@@ -2,8 +2,15 @@ import crypto from 'node:crypto'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import { UNAUTHORIZED_HEADERS, compareToken, extractBearer } from './auth.js'
 import { hostAllow } from './hostAllow.js'
+import { problem, sendProblem } from './problem.js'
 import { type TokenBucket, createTokenBucket } from './rateLimit.js'
 import { handleBrowserToolPost } from './routes/browserTools.js'
+import {
+  applyCorsHeaders,
+  handlePreflight,
+  noStorePrivate,
+  rejectCookieIfPresent,
+} from './routes/cors.js'
 import { handleHealthGet } from './routes/health.js'
 import { handleManifestGet } from './routes/manifest.js'
 import {
@@ -12,8 +19,8 @@ import {
   handleSelectionRecentGet,
 } from './routes/selection.js'
 import { handleShutdownPost } from './routes/shutdown.js'
-import { problem, sendProblem } from './types.js'
 import type { RouteContext } from './types.js'
+import { sendJson } from './types.js'
 import { attachEvents } from './ws/events.js'
 
 export interface ServerOptions {
@@ -24,6 +31,22 @@ export interface ServerOptions {
 
 // Regex for /tabs/<positive-integer>/selection — compiled once at module level.
 const TABS_SELECTION_RE = /^\/tabs\/(\d+)\/selection$/
+
+// OPTIONS method-set table: pathname (or prefix) → allowed methods string.
+// Ordered by specificity; the first match wins. Dynamic paths (/tabs/*/selection)
+// are handled inline.
+const OPTIONS_TABLE: Array<{ path: string; methods: string }> = [
+  { path: '/health', methods: 'GET' },
+  { path: '/selection/recent', methods: 'GET' },
+  { path: '/selection', methods: 'GET' },
+  { path: '/manifest', methods: 'GET' },
+  { path: '/computed_styles', methods: 'POST' },
+  { path: '/dom_subtree', methods: 'POST' },
+  { path: '/shutdown', methods: 'POST' },
+  // /__redesigner/* routes are handled by exchange/revalidate standalone factories
+  // and are not in this table. If they appear in server.ts in the future,
+  // add them here with 'POST'.
+]
 
 export function createDaemonServer(opts: ServerOptions): {
   server: http.Server
@@ -62,56 +85,100 @@ export function createDaemonServer(opts: ServerOptions): {
           `Host must be one of localhost:${opts.port}, 127.0.0.1:${opts.port}, [::1]:${opts.port}; got ${host ?? ''}`,
           reqId,
         ),
+        undefined,
+        req,
       )
       return
     }
 
     // 2. Body size cap is applied at readJsonBody() inside each handler (streaming cutoff).
 
-    // 3–4. Auth: extract bearer, normalized constant-time compare.
-    //      Unauth bucket applies ONLY when auth is missing/invalid (valid-token bypass).
-    const authed = compareToken(extractBearer(req), opts.token)
-
-    if (!authed) {
-      if (!unauthBucket.tryConsume()) {
-        send429(res, reqId, unauthBucket)
-        return
-      }
-      // 401 — empty body + WWW-Authenticate; problem.detail omitted to avoid info leak.
-      sendProblem(res, problem(401, 'Unauthorized', undefined, reqId), UNAUTHORIZED_HEADERS)
-      return
-    }
-
-    // 5–7. Auth'd — per-route-class rate limit, then dispatch.
+    // 3. Parse URL early (needed for method dispatch and OPTIONS).
     let url: URL
     try {
       url = new URL(req.url ?? '/', `http://${host}`)
     } catch {
-      sendProblem(res, problem(400, 'InvalidRequest', 'malformed request URL', reqId))
+      sendProblem(
+        res,
+        problem(400, 'InvalidRequest', 'malformed request URL', reqId),
+        undefined,
+        req,
+      )
       return
     }
     const { pathname } = url
     const method = req.method ?? ''
 
+    // 4. OPTIONS short-circuit — preflight handling before auth.
+    //    OPTIONS must be handled before auth so browsers can complete the
+    //    CORS preflight without needing credentials.
+    if (method === 'OPTIONS') {
+      // Dynamic tab-scoped path.
+      if (TABS_SELECTION_RE.test(pathname)) {
+        handlePreflight(req, res, 'PUT', reqId)
+        return
+      }
+      // Static path lookup.
+      const entry = OPTIONS_TABLE.find((e) => e.path === pathname)
+      if (entry !== undefined) {
+        handlePreflight(req, res, entry.methods, reqId)
+        return
+      }
+      // Unknown path: 404 with Vary.
+      applyCorsHeaders(res, req)
+      sendProblem(
+        res,
+        problem(404, 'NotFound', `no route for OPTIONS ${pathname}`, reqId),
+        undefined,
+        req,
+      )
+      return
+    }
+
+    // 5–7. Auth: extract bearer, normalized constant-time compare.
+    //      Unauth bucket applies ONLY when auth is missing/invalid (valid-token bypass).
+    const authed = compareToken(extractBearer(req), opts.token)
+
+    if (!authed) {
+      if (!unauthBucket.tryConsume()) {
+        send429(res, req, reqId, unauthBucket)
+        return
+      }
+      // 401 — empty body + WWW-Authenticate; problem.detail omitted to avoid info leak.
+      sendProblem(res, problem(401, 'Unauthorized', undefined, reqId), UNAUTHORIZED_HEADERS, req)
+      return
+    }
+
+    // 8. Auth'd — per-route-class rate limit, then dispatch.
     try {
       // GET routes share getBucket (100/s).
       if (method === 'GET' && pathname === '/health') {
-        if (!tryBucket(res, reqId, getBucket)) return
+        if (!tryBucket(res, req, reqId, getBucket)) return
+        // Apply CORS + no-store (health is public status but still CORS-reachable).
+        applyCorsHeaders(res, req)
         handleHealthGet(req, res, opts.ctx)
         return
       }
       if (method === 'GET' && pathname === '/selection') {
-        if (!tryBucket(res, reqId, getBucket)) return
+        if (!tryBucket(res, req, reqId, getBucket)) return
+        if (rejectCookieIfPresent(req, res, reqId)) return
+        // Apply CORS headers; noStorePrivate is called inside handler via sendJson wrapper.
+        applyCorsHeaders(res, req)
+        noStorePrivate(res)
         handleSelectionGet(req, res, opts.ctx)
         return
       }
       if (method === 'GET' && pathname === '/selection/recent') {
-        if (!tryBucket(res, reqId, getBucket)) return
+        if (!tryBucket(res, req, reqId, getBucket)) return
+        if (rejectCookieIfPresent(req, res, reqId)) return
+        applyCorsHeaders(res, req)
+        noStorePrivate(res)
         handleSelectionRecentGet(req, res, opts.ctx)
         return
       }
       if (method === 'GET' && pathname === '/manifest') {
-        if (!tryBucket(res, reqId, getBucket)) return
+        if (!tryBucket(res, req, reqId, getBucket)) return
+        applyCorsHeaders(res, req)
         handleManifestGet(req, res, opts.ctx)
         return
       }
@@ -120,6 +187,8 @@ export function createDaemonServer(opts: ServerOptions): {
       // Path resolution precedes method dispatch: POST /selection also returns 410.
       // GET /selection is excluded above (backward-compat snapshot read stays).
       if (pathname === '/selection' && method !== 'GET') {
+        applyCorsHeaders(res, req)
+        noStorePrivate(res)
         const p = problem(
           410,
           'Gone',
@@ -128,7 +197,7 @@ export function createDaemonServer(opts: ServerOptions): {
         )
         const body: typeof p & { apiErrorCode: string } = { ...p, apiErrorCode: 'endpoint-moved' }
         res.statusCode = 410
-        res.setHeader('Content-Type', 'application/problem+json')
+        res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
         res.end(JSON.stringify(body))
         return
       }
@@ -140,17 +209,26 @@ export function createDaemonServer(opts: ServerOptions): {
         const tabIdRaw = Number(tabsMatch[1])
         // Validate: positive integer within safe range (chrome tab IDs are always positive)
         if (!Number.isInteger(tabIdRaw) || tabIdRaw <= 0 || tabIdRaw > Number.MAX_SAFE_INTEGER) {
-          sendProblem(res, problem(400, 'InvalidRequest', 'tabId out of range', reqId))
+          sendProblem(
+            res,
+            problem(400, 'InvalidRequest', 'tabId out of range', reqId),
+            undefined,
+            req,
+          )
           return
         }
         if (method === 'PUT') {
-          if (!tryBucket(res, reqId, selectionPutBucket)) return
+          if (!tryBucket(res, req, reqId, selectionPutBucket)) return
+          if (rejectCookieIfPresent(req, res, reqId)) return
+          applyCorsHeaders(res, req)
+          noStorePrivate(res)
           await handleSelectionPut(req, res, opts.ctx, tabIdRaw)
           return
         }
         // Wrong method on this known path → 405 with Allow header.
         // No Deprecation/Sunset headers (POST was never supported here).
         res.setHeader('Allow', 'PUT')
+        applyCorsHeaders(res, req)
         const p = problem(
           405,
           'MethodNotAllowed',
@@ -162,25 +240,28 @@ export function createDaemonServer(opts: ServerOptions): {
           apiErrorCode: 'method-not-allowed',
         }
         res.statusCode = 405
-        res.setHeader('Content-Type', 'application/problem+json')
+        res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
         res.end(JSON.stringify(body))
         return
       }
 
       if (method === 'POST' && pathname === '/computed_styles') {
-        if (!tryBucket(res, reqId, computedStylesBucket)) return
+        if (!tryBucket(res, req, reqId, computedStylesBucket)) return
+        applyCorsHeaders(res, req)
         // 6. Concurrency cap for browser-tool routes is enforced inside handleBrowserToolPost
         //    via ctx.rpcCorrelation.tryAcquire() (per-ext slot reservation).
         await handleBrowserToolPost(req, res, opts.ctx, 'getComputedStyles')
         return
       }
       if (method === 'POST' && pathname === '/dom_subtree') {
-        if (!tryBucket(res, reqId, domSubtreeBucket)) return
+        if (!tryBucket(res, req, reqId, domSubtreeBucket)) return
+        applyCorsHeaders(res, req)
         await handleBrowserToolPost(req, res, opts.ctx, 'getDomSubtree')
         return
       }
       if (method === 'POST' && pathname === '/shutdown') {
         // /shutdown is exempt from per-route rate-limit buckets (operator-only, infrequent).
+        applyCorsHeaders(res, req)
         await handleShutdownPost(req, res, opts.ctx)
         return
       }
@@ -191,10 +272,17 @@ export function createDaemonServer(opts: ServerOptions): {
         sendProblem(
           res,
           problem(405, 'MethodNotAllowed', `method ${method} not allowed for ${pathname}`, reqId),
+          undefined,
+          req,
         )
         return
       }
-      sendProblem(res, problem(404, 'NotFound', `no route for ${method} ${pathname}`, reqId))
+      sendProblem(
+        res,
+        problem(404, 'NotFound', `no route for ${method} ${pathname}`, reqId),
+        undefined,
+        req,
+      )
     } catch (err: unknown) {
       // Handlers swallow their own readJsonBody errors already; anything reaching here is
       // genuinely unexpected. Log and 500.
@@ -203,7 +291,7 @@ export function createDaemonServer(opts: ServerOptions): {
         reqId,
       })
       if (!res.headersSent) {
-        sendProblem(res, problem(500, 'InternalError', undefined, reqId))
+        sendProblem(res, problem(500, 'InternalError', undefined, reqId), undefined, req)
       } else {
         res.destroy()
       }
@@ -235,15 +323,25 @@ export function createDaemonServer(opts: ServerOptions): {
   }
 }
 
-function tryBucket(res: ServerResponse, reqId: string, bucket: TokenBucket): boolean {
+function tryBucket(
+  res: ServerResponse,
+  req: IncomingMessage,
+  reqId: string,
+  bucket: TokenBucket,
+): boolean {
   if (bucket.tryConsume()) return true
-  send429(res, reqId, bucket)
+  send429(res, req, reqId, bucket)
   return false
 }
 
-function send429(res: ServerResponse, reqId: string, bucket: TokenBucket): void {
+function send429(
+  res: ServerResponse,
+  req: IncomingMessage,
+  reqId: string,
+  bucket: TokenBucket,
+): void {
   res.setHeader('Retry-After', String(bucket.retryAfterSec()))
-  sendProblem(res, problem(429, 'TooManyRequests', undefined, reqId))
+  sendProblem(res, problem(429, 'TooManyRequests', undefined, reqId), undefined, req)
 }
 
 function isKnownPath(pathname: string): boolean {

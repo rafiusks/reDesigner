@@ -46,6 +46,7 @@ import { compareToken, extractBearer } from '../auth.js'
 import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import { problem, readJsonBody, sendJson, sendProblem } from '../types.js'
+import { handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
 import type { ExchangeRouteHandle } from './exchange.js'
 
 // All Zod schemas at module top-level — CLAUDE.md: in-handler z.object() is a v4 regression cliff.
@@ -84,7 +85,8 @@ function forbidUnknownExtension(res: ServerResponse, detail: string, reqId: stri
   const p = problem(403, 'Forbidden', detail, reqId)
   const body = { ...p, apiErrorCode: 'unknown-extension' }
   res.statusCode = 403
-  res.setHeader('Content-Type', 'application/problem+json')
+  res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
   res.end(JSON.stringify(body))
 }
 
@@ -144,6 +146,15 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
   }
 
   async function handler(req: IncomingMessage, res: ServerResponse, reqId: string): Promise<void> {
+    // Gate 0: Cookie rejection — daemon does not use cookies.
+    if (rejectCookieIfPresent(req, res, reqId)) return
+
+    // OPTIONS preflight — before auth gates.
+    if (req.method === 'OPTIONS') {
+      handlePreflight(req, res, 'POST', reqId)
+      return
+    }
+
     // Gate 1: Sec-Fetch-Site in {none, cross-site}.
     const sfs = req.headers['sec-fetch-site']
     const sfsVal = Array.isArray(sfs) ? sfs[0] : sfs
@@ -258,6 +269,7 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
 
     logger.info('[revalidate] session rotated', { extId })
 
+    noStorePrivate(res)
     sendJson(res, 200, {
       sessionToken: newSessionToken,
       exp: expSec,

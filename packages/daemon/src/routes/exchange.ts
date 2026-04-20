@@ -49,6 +49,7 @@ import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import { clearTrustedExtId, readTrustedExtId, writeTrustedExtId } from '../tofu.js'
 import { problem, readJsonBody, sendJson, sendProblem } from '../types.js'
+import { handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
 
 // All Zod schemas at module top-level - CLAUDE.md: in-handler z.object() is a v4 regression cliff.
 const BodySchema = ExchangeRequestSchema
@@ -112,7 +113,8 @@ function forbidUnknownExtension(res: ServerResponse, detail: string, reqId: stri
   const p = problem(403, 'Forbidden', detail, reqId)
   const body = { ...p, apiErrorCode: 'unknown-extension' }
   res.statusCode = 403
-  res.setHeader('Content-Type', 'application/problem+json')
+  res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
   res.end(JSON.stringify(body))
 }
 
@@ -269,6 +271,17 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
   }
 
   async function handler(req: IncomingMessage, res: ServerResponse, reqId: string): Promise<void> {
+    // Gate 0: Cookie rejection — daemon does not use cookies; a credentialed
+    // request with Cookie is suspicious (CSRF/session-fixation risk).
+    if (rejectCookieIfPresent(req, res, reqId)) return
+
+    // OPTIONS preflight — handled before all other gates so browsers can
+    // complete the CORS handshake without bearer credentials.
+    if (req.method === 'OPTIONS') {
+      handlePreflight(req, res, 'POST', reqId)
+      return
+    }
+
     // Gate 1: Sec-Fetch-Site in {none, cross-site}. When absent (non-browser
     // clients), accept — no cross-site forgery vector.
     const sfs = req.headers['sec-fetch-site']
@@ -385,6 +398,7 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     // so we reinitialize the per-key bucket to full burst on success.
     resetFailedBucket(bucketKey)
 
+    noStorePrivate(res)
     sendJson(res, 200, {
       sessionToken,
       exp: expSec,
