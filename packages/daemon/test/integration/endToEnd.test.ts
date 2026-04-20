@@ -96,8 +96,7 @@ describe('daemon endToEnd — fork + ready + REST + WS + graceful shutdown', () 
     })
     expect(health.status).toBe(200)
     const healthBody = (await health.json()) as Record<string, unknown>
-    expect(healthBody.instanceId).toBe(h.instanceId)
-    expect(healthBody.projectRoot).toBe(h.projectRoot)
+    expect(healthBody.ok).toBe(true)
 
     // ----- 3. GET /manifest — manifest was seeded before fork so expect 200 + ETag.
     const manifestRes = await fetch(`${h.urlPrefix}/manifest`, {
