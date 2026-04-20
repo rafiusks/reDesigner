@@ -63,17 +63,15 @@ test('@nightly handshake completes; daemon /selection reachable with SW-minted b
     const page = await context.newPage()
     await page.goto(devUrl as string)
 
-    // SW boots on first ext-privileged request. Wait for the page handshake
-    // response header (injected by @redesigner/vite transformIndexHtml).
-    const bootstrapHeader = await page.evaluate(async () => {
-      const res = await fetch('/__redesigner/handshake.json')
-      return {
-        status: res.status,
-        bootstrap: res.headers.get('x-redesigner-bootstrap'),
-      }
-    })
-    expect(bootstrapHeader.status).toBe(200)
-    expect(bootstrapHeader.bootstrap).toBeTruthy()
+    // Probe the handshake middleware from OUTSIDE the page context. A fetch
+    // issued by the page sends Sec-Fetch-Site: 'same-origin', which the
+    // middleware gate rejects (design: only 'none' | 'cross-site' — the
+    // handshake is for the extension, not the page JS). A node-side fetch
+    // sends no fetch-metadata headers → middleware treats them as undefined →
+    // gate passes.
+    const handshake = await fetch(`${devUrl}/__redesigner/handshake.json`)
+    expect(handshake.status).toBe(200)
+    expect(handshake.headers.get('x-redesigner-bootstrap')).toBeTruthy()
 
     // Exercise the daemon directly with the root-token we read from the
     // handoff file in globalSetup. Proves: daemon up, auth wired, route live.
