@@ -39,22 +39,28 @@ pnpm --filter @redesigner/playground dev
 ```
 
 Expected: Vite starts on `http://localhost:5173` (or the next free port). The
-`@redesigner/vite` plugin calls `child_process.fork` to spawn the daemon; look
-for a log line like:
+`@redesigner/vite` plugin calls `child_process.fork` to spawn the daemon. The
+plugin prefixes all daemon stdout with `[daemon] ` and the daemon emits a
+structured JSON ready line, so look for something like:
 
 ```
-[redesigner] daemon ready on http://localhost:7891
+[daemon] {"type":"ready","port":<N>,"instanceId":"<uuid>"}
 ```
 
-The exact port is written to the OS runtime dir handoff file (e.g.
-`$TMPDIR/redesigner/<projectHash>/handshake.json`).
+The handoff file is written at
+`$TMPDIR/com.redesigner.<uid>/<projectHash>/daemon-v1.json` on macOS
+(`$XDG_RUNTIME_DIR/redesigner/<projectHash>/daemon-v1.json` on Linux,
+`%LOCALAPPDATA%\redesigner\<uid>\<projectHash>\daemon-v1.json` on Windows) and
+contains the port and bearer token as JSON fields.
 
 Verify the daemon is live:
 
 ```bash
-# Replace <port> with the port shown in the Vite output.
-curl -s http://localhost:<port>/health \
-  -H "Authorization: Bearer $(cat $TMPDIR/redesigner/*/root-token 2>/dev/null || echo '<token>')"
+# Locate the handoff file and extract port + token from its JSON payload.
+HANDOFF=$(find "$TMPDIR" -name 'daemon-v1.json' 2>/dev/null | head -1)
+PORT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$HANDOFF','utf8')).port)")
+TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$HANDOFF','utf8')).token)")
+curl -s "http://localhost:$PORT/health" -H "Authorization: Bearer $TOKEN"
 ```
 
 Expected output:
@@ -65,9 +71,19 @@ Expected output:
 
 ### 4. Register the MCP shim with Claude Code
 
+First build the MCP server so `packages/mcp/dist/cli.js` exists:
+
+```bash
+pnpm --filter @redesigner/mcp build
+```
+
+Then register it with Claude Code. Replace `$REPO_ROOT` with the absolute path
+to your reDesigner checkout (the `--` stdio transport requires an absolute path,
+not a pnpm workspace reference):
+
 ```bash
 claude mcp add --transport stdio redesigner -- \
-  node /Users/$(whoami)/Code/reDesigner/packages/mcp/dist/cli.js
+  node $REPO_ROOT/packages/mcp/dist/cli.js
 ```
 
 Restart Claude Code (or open a new session) so the new server is picked up.
@@ -159,8 +175,9 @@ confirm `redesigner` shows as `connected`. Restart Claude Code after adding the
 server.
 
 **`/health` returns 401**
-The Authorization header is missing or uses the wrong token. Read the root token
-from the handoff directory and pass it as `Bearer <token>`.
+The Authorization header is missing or uses the wrong token. Read the `token`
+field from the `daemon-v1.json` handoff file (see step 3) and pass it as
+`Bearer <token>`.
 
 **Shortcut not firing**
 Open `chrome://extensions/shortcuts` and confirm a key is bound to
