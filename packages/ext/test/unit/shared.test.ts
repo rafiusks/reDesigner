@@ -1,14 +1,3 @@
-/**
- * Task 16 — shared utilities: clock, random, constants, editors, errors.
- *
- * Tests for:
- *  - constants: exact literal values matching spec §2
- *  - clock: injectable Date.now() replacement
- *  - random: nextFullJitterDelay(n) full jitter with injectable Math.random
- *  - editors: EditorSchema allowlist + URL builders + project-root constraint
- *  - errors: re-export from @redesigner/core/schemas/errors
- */
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { now, resetClock, setClock } from '../../src/shared/clock'
 import {
@@ -157,7 +146,7 @@ describe('shared/editors', () => {
       col: 10,
       projectRoot: '/project',
     })
-    expect(url).toBe('vscode://file//project/src/file.ts:42:10')
+    expect(url).toBe('vscode://file/project/src/file.ts:42:10')
   })
 
   it('buildEditorDeeplink for cursor returns correct URL', () => {
@@ -168,7 +157,7 @@ describe('shared/editors', () => {
       col: 10,
       projectRoot: '/project',
     })
-    expect(url).toBe('cursor://file//project/src/file.ts:42:10')
+    expect(url).toBe('cursor://file/project/src/file.ts:42:10')
   })
 
   it('buildEditorDeeplink for webstorm returns correct URL', () => {
@@ -179,7 +168,7 @@ describe('shared/editors', () => {
       col: 10,
       projectRoot: '/project',
     })
-    expect(url).toBe('webstorm://open?file=/project/src/file.ts&line=42&column=10')
+    expect(url).toBe('webstorm://open?file=%2Fproject%2Fsrc%2Ffile.ts&line=42&column=10')
   })
 
   it('buildEditorDeeplink for zed returns correct URL', () => {
@@ -214,16 +203,99 @@ describe('shared/editors', () => {
       projectRoot: '/project/',
     })
     // Should not throw and should produce valid URL
-    expect(url).toBe('vscode://file//project/src/file.ts:1:1')
+    expect(url).toBe('vscode://file/project/src/file.ts:1:1')
+  })
+
+  it('throws RangeError when line is NaN', () => {
+    expect(() =>
+      buildEditorDeeplink({
+        editor: 'vscode',
+        filePath: '/project/src/file.ts',
+        line: Number.NaN,
+        col: 1,
+        projectRoot: '/project',
+      }),
+    ).toThrow(RangeError)
+  })
+
+  it('throws RangeError when col is negative', () => {
+    expect(() =>
+      buildEditorDeeplink({
+        editor: 'vscode',
+        filePath: '/project/src/file.ts',
+        line: 1,
+        col: -1,
+        projectRoot: '/project',
+      }),
+    ).toThrow(RangeError)
+  })
+
+  it('throws RangeError when line is non-integer', () => {
+    expect(() =>
+      buildEditorDeeplink({
+        editor: 'vscode',
+        filePath: '/project/src/file.ts',
+        line: 1.5,
+        col: 1,
+        projectRoot: '/project',
+      }),
+    ).toThrow(RangeError)
+  })
+
+  it('throws RangeError when line is zero', () => {
+    expect(() =>
+      buildEditorDeeplink({
+        editor: 'vscode',
+        filePath: '/project/src/file.ts',
+        line: 0,
+        col: 1,
+        projectRoot: '/project',
+      }),
+    ).toThrow(RangeError)
+  })
+
+  it('webstorm percent-encodes path with spaces and ampersands', () => {
+    const url = buildEditorDeeplink({
+      editor: 'webstorm',
+      filePath: '/project/src/has space.ts',
+      line: 1,
+      col: 1,
+      projectRoot: '/project',
+    })
+    expect(url).toBe('webstorm://open?file=%2Fproject%2Fsrc%2Fhas%20space.ts&line=1&column=1')
+  })
+
+  it('throws OutsideProjectRootError for path traversal with ..', () => {
+    expect(() =>
+      buildEditorDeeplink({
+        editor: 'vscode',
+        filePath: '/project/src/../../etc/passwd',
+        line: 1,
+        col: 1,
+        projectRoot: '/project',
+      }),
+    ).toThrow(OutsideProjectRootError)
+  })
+
+  it('throws OutsideProjectRootError for path with . segment', () => {
+    expect(() =>
+      buildEditorDeeplink({
+        editor: 'vscode',
+        filePath: '/project/./src/foo.ts',
+        line: 1,
+        col: 1,
+        projectRoot: '/project',
+      }),
+    ).toThrow(OutsideProjectRootError)
   })
 })
 
 describe('shared/errors', () => {
-  it('re-exports RpcErrorCode from @redesigner/core/schemas/errors', () => {
+  it('re-exports RpcErrorCode from @redesigner/core/schemas', () => {
     expect(RpcErrorCode.ExtensionDisconnected).toBe(-32001)
   })
 
-  it('re-exports ApiErrorCodeToRpc from @redesigner/core/schemas/errors', () => {
+  it('re-exports ApiErrorCodeToRpc from @redesigner/core/schemas', () => {
     expect(ApiErrorCodeToRpc).toBeDefined()
     expect(ApiErrorCodeToRpc['extension-disconnected']).toBe(RpcErrorCode.ExtensionDisconnected)
   })
