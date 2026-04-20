@@ -14,13 +14,13 @@ export default defineConfig({
       name: '@smoke',
       testMatch: /smoke\/.*\.spec\.ts/,
       retries: process.env.CI ? 2 : 0,
-      use: { ...devices['Desktop Chrome'], channel: undefined },
+      use: { ...devices['Desktop Chrome'] },
     },
     {
       name: '@nightly',
       testMatch: /nightly\/.*\.spec\.ts/,
       retries: 0,
-      use: { ...devices['Desktop Chrome'], channel: undefined },
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
 })

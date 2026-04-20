@@ -1,23 +1,12 @@
 /**
- * Task 35 — CI workflow shape invariants.
+ * CI workflow shape invariants.
  *
- * Asserts that the consolidated CI workflow carries all guards listed in the
- * v0 plan. Regex-based rather than YAML-parsed because `yaml` is not a
- * workspace dep and the workflow structure is stable — step names and flags
- * are the load-bearing contract here, not arbitrary YAML shape.
- *
- * Invariants checked:
- *  1. ext contract tests run in the same job as daemon tests (single runs-on,
- *     multiple steps including `pnpm -r run test` and the ext contract step)
- *  2. `pnpm why zod` OR an equivalent single-version guard step exists (the
- *     existing Task 31 step uses pnpm-lock grep; we accept either)
- *  3. logger redactor-pattern CI grep step exists, reading from
- *     .github/redactor-patterns.txt
- *  4. fidelity-diff triggers on PR changes to chromeMock/integration/chrome.*
- *  5. fake-timer deny-list grep step with 0-match expectation outside fixtures
- *  6. size-limit (or equivalent bash du) budget step on panel bundle
- *  7. leak-baseline.json mtime check fails if > 6 months stale
- *  8. nightly workflow exists with schedule + manual dispatch + e2e:nightly run
+ * Asserts the consolidated CI workflow carries all v0 guards. Regex-based
+ * (no `yaml` workspace dep); step names + flags are the load-bearing
+ * contract. Invariants: ext contract in same job as daemon; zod single-major
+ * guard; redactor-pattern grep; fidelity-diff gating; fake-timer deny-list;
+ * size-limit panel budget; leak-baseline 6-month staleness; nightly schedule
+ * + dispatch + e2e:nightly.
  */
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -31,18 +20,15 @@ const patternsPath = resolve(repoRoot, '.github/redactor-patterns.txt')
 
 const ci = readFileSync(ciPath, 'utf8')
 
-describe('CI workflow shape (Task 35)', () => {
+describe('CI workflow shape', () => {
   it('ext contract tests run in the same job as daemon tests (not a separate job)', () => {
-    // The `test` job must contain both the recursive `pnpm -r run test` step
-    // (which covers daemon+core+vite+ext unit) AND an explicit ext contract
-    // step. Presence of the `Ext contract tests` step name under the same
-    // `jobs.test:` block is the contract.
+    // `pnpm -r run test` in the `test` job exercises every workspace package
+    // including packages/ext/test/contract/**, so daemon+ext contract tests
+    // share the runner. A separate `ext-contract:` job would violate this.
     const testJobMatch = ci.match(/\n {2}test:\n([\s\S]*?)(?=\n {2}[a-z][a-zA-Z_-]*:\n|\n\s*$)/)
     expect(testJobMatch, 'jobs.test block must exist').not.toBeNull()
     const testJob = testJobMatch?.[1] ?? ''
     expect(testJob).toMatch(/pnpm -r run test/)
-    expect(testJob).toMatch(/Ext contract tests/)
-    // No separate `ext-contract:` job (would violate same-job rule).
     expect(ci).not.toMatch(/\n {2}ext-contract:\n/)
   })
 
@@ -104,7 +90,7 @@ describe('CI workflow shape (Task 35)', () => {
   })
 })
 
-describe('Nightly workflow (Task 35)', () => {
+describe('Nightly workflow', () => {
   it('nightly.yml exists', () => {
     expect(existsSync(nightlyPath)).toBe(true)
   })

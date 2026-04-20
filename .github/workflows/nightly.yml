@@ -64,16 +64,16 @@ jobs:
           CURRENT_PATH: packages/ext/leak-current.json
         run: |
           # Compare current harness leak metrics against packages/ext/leak-baseline.json.
-          # A regression here is the canary for SW heap / storage.session growth;
-          # schedule a fix, do not rubber-stamp a new baseline.
-          if [ ! -f "$CURRENT_PATH" ]; then
-            echo "::warning::No leak-current.json emitted by harness; skipping diff"
-            exit 0
-          fi
+          # A regression here is the canary for SW heap / storage.session growth.
           node -e '
             const fs = require("node:fs");
+            let cur;
+            try { cur = JSON.parse(fs.readFileSync(process.env.CURRENT_PATH, "utf8")); }
+            catch (e) {
+              if (e.code === "ENOENT") { console.warn("::warning::No leak-current.json emitted by harness; skipping diff"); process.exit(0); }
+              throw e;
+            }
             const base = JSON.parse(fs.readFileSync(process.env.BASELINE_PATH, "utf8"));
-            const cur = JSON.parse(fs.readFileSync(process.env.CURRENT_PATH, "utf8"));
             const grow = (k) => {
               const b = base[k] ?? 0;
               const c = cur[k] ?? 0;

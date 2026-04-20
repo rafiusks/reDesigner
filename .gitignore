@@ -11,6 +11,7 @@ pnpm-debug.log
 # Local session state for Claude Code tooling
 .remember/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .superpowers/
 
 .husky/_

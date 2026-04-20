@@ -56,8 +56,14 @@ contains the port and bearer token as JSON fields.
 Verify the daemon is live:
 
 ```bash
-# Locate the handoff file and extract port + token from its JSON payload.
-HANDOFF=$(find "$TMPDIR" -name 'daemon-v1.json' 2>/dev/null | head -1)
+# Locate the handoff file (platform-specific runtime dir) and extract
+# port + token from its JSON payload.
+case "$(uname -s)" in
+  Darwin) ROOT="$TMPDIR/com.redesigner.$(id -u)" ;;
+  Linux)  ROOT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/redesigner" ;;
+  *)      ROOT="$LOCALAPPDATA/redesigner" ;;  # Windows (use $env:LOCALAPPDATA in PowerShell)
+esac
+HANDOFF=$(find "$ROOT" -name 'daemon-v1.json' 2>/dev/null | head -1)
 PORT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$HANDOFF','utf8')).port)")
 TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$HANDOFF','utf8')).token)")
 curl -s "http://localhost:$PORT/health" -H "Authorization: Bearer $TOKEN"

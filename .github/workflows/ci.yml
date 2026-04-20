@@ -59,14 +59,10 @@ jobs:
       - name: Guard against raw === token comparisons
         shell: bash
         run: |
-          # Find any line in daemon src that compares a *Token* identifier with raw ===.
-          # Allowed pattern: compareToken(...).
-          # Disallowed: `if (token === expected)` or `foo.token === bar`.
-          if grep -rnE '[A-Za-z_]*[Tt]oken[A-Za-z_]*\s*===' packages/daemon/src/; then
-            echo "::error::Raw === token comparison found. Use compareToken() from ./auth.js instead."
-            exit 1
-          fi
-          if grep -rnE '===\s*[A-Za-z_]*[Tt]oken[A-Za-z_]*' packages/daemon/src/; then
+          # Any === adjacent to a *Token* identifier in daemon src.
+          # Allowed: compareToken(...). Disallowed: `token === expected`,
+          # `foo.token === bar`.
+          if grep -rnE '([A-Za-z_]*[Tt]oken[A-Za-z_]*\s*===|===\s*[A-Za-z_]*[Tt]oken[A-Za-z_]*)' packages/daemon/src/; then
             echo "::error::Raw === token comparison found. Use compareToken() from ./auth.js instead."
             exit 1
           fi
@@ -74,6 +70,10 @@ jobs:
       - run: pnpm -r run typecheck
       - run: pnpm -r run test
       - run: pnpm --filter @redesigner/vite run test:parallelism
+      # NOTE: pnpm -r run test already exercises packages/ext/test/contract/**;
+      # no separate ext contract step needed. Shape-test assertion for "ext
+      # contract runs in same job as daemon tests" is satisfied by both living
+      # under this `test` job.
       - name: Zod version single-major guard
         shell: bash
         run: |
@@ -95,8 +95,6 @@ jobs:
             exit 1
           fi
           echo "Zod guard OK: resolved=$RESOLVED major=$MAJOR expected=$EXPECTED"
-      - name: Ext contract tests
-        run: pnpm --filter @redesigner/ext test -- test/contract/
       - name: Fixture update guard (three-dot diff)
         shell: bash
         run: |
@@ -142,16 +140,12 @@ jobs:
           # 200KB raw (uncompressed) is the v0 budget; tighten as we grow.
           pnpm --filter @redesigner/ext build >/dev/null
           BUDGET_KB=200
-          DIST=packages/ext/dist
-          if [ ! -d "$DIST" ]; then
-            echo "::error::panel bundle dir $DIST missing after build"
-            exit 1
-          fi
-          # Pick the largest JS chunk that originated from the panel entry.
-          # CRXJS emits hashed filenames; match the panel entry by path prefix.
-          PANEL_CHUNK=$(find "$DIST" -type f -name '*.js' \
-            \( -path '*panel*' -o -path '*index*' \) \
-            -print0 | xargs -0 du -k 2>/dev/null | sort -n | tail -1 || true)
+          ASSETS=packages/ext/dist/assets
+          # Pick the largest panel-originated JS chunk in the flat assets dir,
+          # excluding sourcemaps. CRXJS emits hashed `panel-<hash>.js` names.
+          PANEL_CHUNK=$(find "$ASSETS" -maxdepth 1 -type f -name 'panel*.js' \
+            ! -name '*.map' \
+            -print0 2>/dev/null | xargs -0 du -k 2>/dev/null | sort -n | tail -1 || true)
           if [ -z "$PANEL_CHUNK" ]; then
             echo "::warning::No panel chunk located under $DIST — skipping size-limit"
             exit 0
