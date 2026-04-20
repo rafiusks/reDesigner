@@ -19,8 +19,9 @@ the Chrome extension and verifying the result via the MCP shim from Claude Code.
 pnpm --filter @redesigner/ext build
 ```
 
-Expected: `packages/ext/dist/` populated with `manifest.json`, `src/sw/index.js`,
-content scripts, and panel assets.
+Expected: `packages/ext/dist/` populated with `manifest.json`,
+`service-worker-loader.js` (the CRXJS-generated SW entry), per-panel chunks
+under `assets/`, icon PNGs, and `src/panel/index.html`.
 
 ### 2. Load the extension in Chrome
 
@@ -40,12 +41,15 @@ pnpm --filter @redesigner/playground dev
 
 Expected: Vite starts on `http://localhost:5173` (or the next free port). The
 `@redesigner/vite` plugin calls `child_process.fork` to spawn the daemon. The
-plugin prefixes all daemon stdout with `[daemon] ` and the daemon emits a
-structured JSON ready line, so look for something like:
+daemon's stdout ready line is consumed internally by the bridge, so the
+terminal only shows the vite banner. Confirm the daemon actually started by
+either:
 
-```
-[daemon] {"type":"ready","port":<N>,"instanceId":"<uuid>"}
-```
+- Tailing `examples/playground/.redesigner/daemon.log`. Success looks like:
+  ```json
+  {"ts":<unix-ms>,"level":"info","msg":"[daemon] ready","pid":<N>,"port":<N>,"instanceId":"<uuid>","handoffPath":"..."}
+  ```
+- Or checking the handoff file (next block).
 
 The handoff file is written at
 `$TMPDIR/com.redesigner.<uid>/<projectHash>/daemon-v1.json` on macOS
@@ -72,7 +76,7 @@ curl -s "http://localhost:$PORT/health" -H "Authorization: Bearer $TOKEN"
 Expected output:
 
 ```json
-{ "ok": true }
+{"ok":true}
 ```
 
 ### 4. Register the MCP shim with Claude Code
@@ -123,25 +127,32 @@ Expected: the extension sends:
 PUT http://localhost:<port>/tabs/<tabId>/selection
 ```
 
-with body:
+with body (shape per `SelectionPutBodySchema` in `@redesigner/core`):
 
 ```json
 {
+  "clientId": "<uuidv4>",
   "nodes": [
     {
-      "displayName": "Button",
+      "id": "<opaque-1-128-char-id>",
+      "componentName": "Button",
       "filePath": "examples/playground/src/components/Button.tsx",
       "lineRange": [1, 10],
-      "columnRange": [0, 0]
+      "domPath": "body > div > button",
+      "parentChain": ["App", "Page"],
+      "timestamp": 1681234567890
     }
-  ]
+  ],
+  "meta": { "source": "picker" }
 }
 ```
+
+(`meta` is optional; `lineRange` is `[start, end]` of 1-based line numbers.)
 
 Response body:
 
 ```json
-{ "selectionSeq": 1, "acceptedAt": 1681234567890 }
+{"selectionSeq":1,"acceptedAt":1681234567890}
 ```
 
 The side panel updates and shows the selected component with a "Claude Code can
