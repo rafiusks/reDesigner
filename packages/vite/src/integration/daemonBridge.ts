@@ -108,6 +108,40 @@ export class DaemonBridge {
   private signalHandlers: Array<{ signal: NodeJS.Signals; fn: () => void }> = []
   private handoffPath: string | null = null
 
+  /**
+   * Discovery accessor used by the handshake middleware to build daemon URLs.
+   * Re-reads the handoff file on every call so a daemon restart reflects
+   * without recycling the Vite server.
+   *
+   * Returns null if the bridge has not started, the handoff is missing, or
+   * the file fails to parse. Any parse failure is silent by design — the
+   * middleware maps null to a 503 degraded response.
+   */
+  getDaemonInfo(): { port: number; serverVersion: string } | null {
+    if (!this.handle || !this.handoffPath) return null
+    let raw: string
+    try {
+      raw = fs.readFileSync(this.handoffPath, 'utf8')
+    } catch {
+      return null
+    }
+    let parsed: Handoff
+    try {
+      parsed = JSON.parse(raw) as Handoff
+    } catch {
+      return null
+    }
+    if (
+      typeof parsed.port !== 'number' ||
+      !Number.isFinite(parsed.port) ||
+      typeof parsed.serverVersion !== 'string' ||
+      parsed.serverVersion.length === 0
+    ) {
+      return null
+    }
+    return { port: parsed.port, serverVersion: parsed.serverVersion }
+  }
+
   async start(opts: DaemonBridgeOptions): Promise<void> {
     if (opts.mode === 'off') return
     let mod: Awaited<ReturnType<typeof opts.importer>>

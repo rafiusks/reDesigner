@@ -1,14 +1,29 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { transformAsync } from '@babel/core'
+import { EditorSchema } from '@redesigner/core/schemas'
 import type { Plugin, ResolvedConfig } from 'vite'
 import { redesignerBabelPlugin } from './babel/plugin'
+import {
+  type BootstrapState,
+  HANDSHAKE_PATH,
+  createBootstrapState,
+  createHandshakeMiddleware,
+} from './bootstrap'
 import { rejectEscapingPath, toPosixRelative } from './core/pathGuards'
 import type { Logger, PerFileBatch } from './core/types-internal'
-import type { RedesignerOptions } from './core/types-public'
+import type { Editor, RedesignerOptions } from './core/types-public'
 import { DaemonBridge } from './integration/daemonBridge'
 import { ManifestWriter } from './integration/manifestWriter'
 import { detectJsxRuntime } from './integration/runtimeDetect'
+
+/**
+ * Plugin version — emitted on `/__redesigner/handshake.json`. Kept as a module
+ * constant rather than a JSON import to avoid a build-time dependency on JSON
+ * modules and to match what the built artifact ships (tsup targets a string
+ * literal output; no runtime I/O).
+ */
+const PLUGIN_VERSION = '0.0.0'
 
 interface ClientState {
   writer: ManifestWriter
@@ -17,6 +32,21 @@ interface ClientState {
   manifestPath: string
   include: string[]
   exclude: string[]
+  bootstrap: BootstrapState
+  editor: Editor
+}
+
+function resolveEditor(
+  input: RedesignerOptions['editor'],
+  logger: ResolvedConfig['logger'],
+): Editor {
+  if (input === undefined) return 'vscode'
+  const parsed = EditorSchema.safeParse(input)
+  if (parsed.success) return parsed.data
+  logger.warn(
+    `[redesigner] options.editor '${String(input)}' is not a known editor; falling back to 'vscode'`,
+  )
+  return 'vscode'
 }
 
 function normalizeDaemon(input: RedesignerOptions['daemon']): {
@@ -35,6 +65,18 @@ function loadTsconfig(root: string): unknown {
   } catch {
     return undefined
   }
+}
+
+/**
+ * Read the live port from Vite's HTTP server. Returns null in middlewareMode (no
+ * server) or before `listen()` resolves. The handshake middleware treats null as
+ * a signal to reject with 421 since we cannot verify the Host header's authority.
+ */
+function viteServerPort(server: { httpServer?: { address(): unknown } | null }): number | null {
+  const addr = server.httpServer?.address?.()
+  if (!addr || typeof addr !== 'object') return null
+  const port = (addr as { port?: unknown }).port
+  return typeof port === 'number' ? port : null
 }
 
 function makeLogger(viteLogger: ResolvedConfig['logger']): Logger {
@@ -101,16 +143,44 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         logger: makeLogger(logger),
       })
       const daemon = new DaemonBridge()
-      client = { writer, daemon, projectRoot, manifestPath, include, exclude }
+      const bootstrap = createBootstrapState()
+      const editor = resolveEditor(options.editor, logger)
+      client = {
+        writer,
+        daemon,
+        projectRoot,
+        manifestPath,
+        include,
+        exclude,
+        bootstrap,
+        editor,
+      }
     },
 
     async configureServer(server) {
       if (!client) return
+      const c = client
 
-      await client.daemon.start({
+      // Register the handshake route BEFORE starting the daemon so that requests
+      // that arrive during the (async) daemon bring-up hit the middleware — it
+      // degrades to 503 `extension-disconnected` until the handoff is readable.
+      //
+      // `server.middlewares.use(path, handler)` registers onto the connect stack
+      // at call-time; Vite's SPA fallback only runs for requests that would
+      // otherwise 404, so our 2xx/4xx responses short-circuit correctly.
+      const handshake = createHandshakeMiddleware({
+        viteServerPort: () => viteServerPort(server),
+        bootstrap: c.bootstrap,
+        getDaemonInfo: () => c.daemon.getDaemonInfo(),
+        pluginVersion: PLUGIN_VERSION,
+        editor: c.editor,
+      })
+      server.middlewares.use(HANDSHAKE_PATH, handshake)
+
+      await c.daemon.start({
         mode: daemonOpts.mode,
-        projectRoot: client.projectRoot,
-        manifestPath: client.manifestPath,
+        projectRoot: c.projectRoot,
+        manifestPath: c.manifestPath,
         // biome-ignore lint/suspicious/noExplicitAny: dynamic import path; TS static analyser requires string literal
         importer: () => import('@redesigner/daemon' as any),
         logger: makeLogger(config.logger),

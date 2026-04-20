@@ -10,6 +10,10 @@ export type {
   SelectionFile,
 } from '@redesigner/core'
 
+import type { Editor } from '@redesigner/core/schemas'
+
+export type { Editor }
+
 export interface DaemonOptions {
   mode?: 'auto' | 'required' | 'off'
 }
@@ -20,4 +24,9 @@ export interface RedesignerOptions {
   exclude?: string[]
   enabled?: boolean
   daemon?: DaemonOptions | 'auto' | 'required' | 'off'
+  /**
+   * Editor used by deep-link URL builders in the extension.
+   * Validated at plugin boot; invalid values log a warning and default to 'vscode'.
+   */
+  editor?: Editor
 }
