@@ -171,7 +171,7 @@ describe('SelectionCard', () => {
     expect(container.textContent).toContain('claude mcp add')
     expect(container.textContent).toContain('--transport stdio')
     expect(container.textContent).toContain('redesigner')
-    expect(container.textContent).toContain('mcp.sh')
+    expect(container.textContent).toContain('packages/mcp/dist/cli.js')
   })
 
   it('when !mcpWired shows restart instruction', () => {
