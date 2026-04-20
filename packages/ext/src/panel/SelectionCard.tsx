@@ -10,7 +10,12 @@
  */
 
 import type { ComponentHandle } from '@redesigner/core/types'
+import { Suspense, lazy } from 'react'
 import type { JSX } from 'react'
+
+// Lazy chunk: the MCP setup card is only shown during first-run before the
+// user wires up the MCP shim. Splitting it keeps steady-state panel bytes down.
+const McpSetupChip = lazy(() => import('./McpSetupChip.js'))
 
 export interface SelectionCardProps {
   selection: ComponentHandle | null
@@ -36,9 +41,6 @@ export function SelectionCard(props: SelectionCardProps): JSX.Element | null {
       chrome.runtime.sendMessage({ type: 'show-pickable-elements' })
     }
   }
-
-  const mcpSnippet =
-    'claude mcp add --transport stdio redesigner -- node <repo>/packages/mcp/dist/cli.js'
 
   return (
     <div
@@ -72,27 +74,9 @@ export function SelectionCard(props: SelectionCardProps): JSX.Element | null {
           </button>
         </div>
       ) : (
-        <div data-testid="mcp-chip-unwired" style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: '#1565c0', fontWeight: 500, marginBottom: 6 }}>
-            Set up the MCP shim
-          </div>
-
-          <div
-            data-testid="mcp-snippet"
-            style={{
-              padding: 8,
-              background: '#f5f5f5',
-              borderRadius: 4,
-              fontSize: 11,
-              fontFamily: 'monospace',
-            }}
-          >
-            <div>{mcpSnippet}</div>
-            <div style={{ marginTop: 4, color: '#555', fontFamily: 'inherit' }}>
-              Then restart Claude Code.
-            </div>
-          </div>
-        </div>
+        <Suspense fallback={null}>
+          <McpSetupChip />
+        </Suspense>
       )}
 
       {/* Actions row */}

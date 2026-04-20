@@ -32,6 +32,18 @@ function mount(element: React.ReactElement): { root: Root; container: HTMLElemen
   return { root, container }
 }
 
+async function flushLazy(): Promise<void> {
+  // React.lazy resolves over several microtask/macrotask ticks when the
+  // dynamic import completes and then Suspense re-renders. First-time chunk
+  // resolution needs more turns than a warm cache — loop until the commit
+  // settles (capped).
+  for (let i = 0; i < 10; i++) {
+    await act(async () => {
+      await new Promise<void>((r) => setTimeout(r, 0))
+    })
+  }
+}
+
 const mountedRoots: Root[] = []
 const mountedContainers: HTMLElement[] = []
 
@@ -161,21 +173,29 @@ describe('SelectionCard', () => {
     expect(container.textContent).toContain('current selection?')
   })
 
-  it('when !mcpWired shows "Set up the MCP shim" chip', () => {
+  it('when !mcpWired shows "Set up the MCP shim" chip', async () => {
     const { container } = mountTracked(<SelectionCard selection={fakeHandle} mcpWired={false} />)
+    // Lazy-loaded McpSetupChip — flush dynamic-import + Suspense.
+    await flushLazy()
     expect(container.textContent).toContain('Set up the MCP shim')
   })
 
-  it('when !mcpWired shows the MCP snippet with correct command', () => {
+  it('when !mcpWired shows the MCP snippet with correct command', async () => {
     const { container } = mountTracked(<SelectionCard selection={fakeHandle} mcpWired={false} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
     expect(container.textContent).toContain('claude mcp add')
     expect(container.textContent).toContain('--transport stdio')
     expect(container.textContent).toContain('redesigner')
     expect(container.textContent).toContain('packages/mcp/dist/cli.js')
   })
 
-  it('when !mcpWired shows restart instruction', () => {
+  it('when !mcpWired shows restart instruction', async () => {
     const { container } = mountTracked(<SelectionCard selection={fakeHandle} mcpWired={false} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
     expect(container.textContent?.toLowerCase()).toContain('restart')
   })
 
@@ -455,6 +475,8 @@ describe('Debug', () => {
       })
       window.dispatchEvent(event)
     })
+    // Lazy-loaded DebugDrawer — flush dynamic-import + Suspense.
+    await flushLazy()
 
     const drawer = document.querySelector('[data-testid="debug-drawer"]')
     expect(drawer).not.toBeNull()
@@ -556,6 +578,7 @@ describe('Debug', () => {
       })
       window.dispatchEvent(event)
     })
+    await flushLazy()
 
     const drawer = document.querySelector('[data-testid="debug-drawer"]')
     expect(drawer).not.toBeNull()
