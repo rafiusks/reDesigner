@@ -7,6 +7,7 @@
 
 import { ensureSession } from './ensureSession.js'
 import type { PanelPort } from './panelPort.js'
+import { persistSelection } from './persistSelection.js'
 
 export interface TabHandshake {
   wsUrl: string
@@ -130,12 +131,38 @@ export async function routeMessage(
   }
 
   if (type === 'selection') {
-    const handle = (msg as { handle?: unknown }).handle
+    const rawHandle = (msg as { handle?: unknown }).handle
     if (typeof tabId === 'number' && typeof windowId === 'number') {
-      deps.panelPort.push(windowId, tabId, { selection: handle ?? null })
-      console.log('[redesigner:sw] selection pushed', { tabId, windowId })
+      try {
+        try {
+          const maybePromise = deps.panelPort.push(windowId, tabId, {
+            selection: rawHandle ?? null,
+          })
+          Promise.resolve(maybePromise).catch((err: unknown) => {
+            console.warn('[redesigner:sw] panelPort.push rejected', {
+              name: err instanceof Error ? err.name : 'unknown',
+              message: err instanceof Error ? err.message : String(err),
+            })
+          })
+        } catch (err) {
+          console.warn('[redesigner:sw] panelPort.push threw', {
+            name: err instanceof Error ? err.name : 'unknown',
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
+      } finally {
+        // INVARIANT: total async work stays under Chrome's 5-minute per-event cap.
+        await persistSelection(tabId, rawHandle, deps)
+      }
     }
-    sendResponse({ ok: true })
+    try {
+      sendResponse({ ok: true })
+    } catch (err) {
+      console.warn('[redesigner:sw] sendResponse threw (port likely closed)', {
+        tabId,
+        message: err instanceof Error ? err.message : String(err),
+      })
+    }
     return
   }
 
