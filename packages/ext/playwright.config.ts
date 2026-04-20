@@ -5,6 +5,9 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // Global hooks no-op unless PW_FULL_HARNESS=1 — safe to always register.
+  globalSetup: './test/e2e/globalSetup.ts',
+  globalTeardown: './test/e2e/globalTeardown.ts',
   use: {
     trace: 'on-first-retry',
     video: 'retain-on-failure',

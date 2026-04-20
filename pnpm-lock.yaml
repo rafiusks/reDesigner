@@ -129,6 +129,9 @@ importers:
       '@playwright/test':
         specifier: 1.47.2
         version: 1.47.2
+      '@redesigner/daemon':
+        specifier: workspace:*
+        version: link:../daemon
       '@types/chrome':
         specifier: ^0.0.280
         version: 0.0.280
