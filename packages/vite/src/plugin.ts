@@ -3,6 +3,7 @@ import path from 'node:path'
 import { transformAsync } from '@babel/core'
 import { EditorSchema } from '@redesigner/core/schemas'
 import type { Plugin, ResolvedConfig } from 'vite'
+import viteManifest from 'vite/package.json' with { type: 'json' }
 import { redesignerBabelPlugin } from './babel/plugin'
 import {
   type BootstrapState,
@@ -16,14 +17,31 @@ import type { Editor, RedesignerOptions } from './core/types-public'
 import { DaemonBridge } from './integration/daemonBridge'
 import { ManifestWriter } from './integration/manifestWriter'
 import { detectJsxRuntime } from './integration/runtimeDetect'
+import { checkViteVersion } from './viteVersionCheck'
 
 /**
- * Plugin version — emitted on `/__redesigner/handshake.json`. Kept as a module
- * constant rather than a JSON import to avoid a build-time dependency on JSON
- * modules and to match what the built artifact ships (tsup targets a string
- * literal output; no runtime I/O).
+ * Plugin version — emitted on `/__redesigner/handshake.json` and injected into
+ * the `<meta name="redesigner-daemon">` tag. Kept as a module constant rather
+ * than a JSON import to avoid a build-time dependency on JSON modules and to
+ * match what the built artifact ships (tsup targets a string literal output;
+ * no runtime I/O).
  */
-const PLUGIN_VERSION = '0.0.0'
+export const PLUGIN_VERSION = '0.0.0'
+
+/**
+ * Encode a JSON string for safe embedding inside a single-quote-delimited HTML
+ * attribute value (i.e. content='...'). JSON naturally uses double-quotes for
+ * keys/values, which are safe inside single-quote delimiters and must NOT be
+ * escaped (doing so would break JSON.parse on the consumer side). Only the
+ * characters that can break a single-quote-delimited attribute need escaping:
+ *   &  →  &amp;   (prevents entity injection)
+ *   <  →  &lt;    (prevents tag break-out)
+ *   >  →  &gt;    (belt-and-suspenders)
+ *   '  →  &#39;   (closes the outer attribute delimiter)
+ */
+function escapeHtmlAttrSingleQuote(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;')
+}
 
 interface ClientState {
   writer: ManifestWriter
@@ -103,6 +121,10 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
     configResolved(resolvedConfig) {
       config = resolvedConfig
       const logger = config.logger
+
+      // CVE gate: refuse to start on Vite versions with known path-traversal
+      // and source-access vulnerabilities.
+      checkViteVersion((viteManifest as { version: string }).version)
 
       if (!(options.enabled ?? true)) {
         logger.info('[redesigner] disabled via options.enabled=false')
@@ -232,6 +254,31 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
       if (!result) return undefined
       client.writer.commitFile(relPath, batch)
       return { code: result.code ?? code, map: result.map ?? null }
+    },
+
+    transformIndexHtml: {
+      order: 'pre',
+      // `apply: 'serve'` on the plugin already gates this to dev mode, but
+      // explicitly guard here too so the hook is a no-op if somehow called
+      // outside a serving context.
+      handler(html) {
+        if (!client) return html
+        const daemonInfo = client.daemon.getDaemonInfo()
+        // Include all 6 HandshakeSchema fields. When the daemon hasn't started
+        // yet daemonVersion defaults to 'unknown'; the extension can check
+        // the handshake endpoint for authoritative values.
+        const payload = {
+          wsUrl: daemonInfo ? `ws://127.0.0.1:${daemonInfo.port}/events` : '',
+          httpUrl: daemonInfo ? `http://127.0.0.1:${daemonInfo.port}` : '',
+          bootstrapToken: String(client.bootstrap.current()),
+          editor: client.editor,
+          pluginVersion: PLUGIN_VERSION,
+          daemonVersion: daemonInfo?.serverVersion ?? 'unknown',
+        }
+        const escaped = escapeHtmlAttrSingleQuote(JSON.stringify(payload))
+        const tag = `<meta name="redesigner-daemon" content='${escaped}'>`
+        return html.replace('<head>', `<head>\n  ${tag}`)
+      },
     },
 
     async closeBundle() {
