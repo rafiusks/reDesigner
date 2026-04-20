@@ -258,14 +258,15 @@ describe('content/index integration', () => {
     }
     globalThis.MutationObserver = MockMO as unknown as typeof MutationObserver
 
-    await loadContentScript()
+    try {
+      await loadContentScript()
 
-    // Fire beforeunload — stopContentScript calls disconnect.
-    window.dispatchEvent(new Event('beforeunload'))
+      window.dispatchEvent(new Event('beforeunload'))
 
-    await vi.waitFor(() => expect(disconnectSpy).toHaveBeenCalledOnce())
-
-    globalThis.MutationObserver = OriginalMutationObserver
+      await vi.waitFor(() => expect(disconnectSpy).toHaveBeenCalledOnce())
+    } finally {
+      globalThis.MutationObserver = OriginalMutationObserver
+    }
   })
 
   it('(4) MutationObserver re-sends register when meta content changes', async () => {
