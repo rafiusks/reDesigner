@@ -350,6 +350,45 @@ describe('/__redesigner/handshake.json middleware', () => {
     expect(body.daemonVersion).toBe('9.9.9')
   })
 
+  it('injected readBootstrap token appears in body and X-Redesigner-Bootstrap header', () => {
+    const injectedToken = 'b'.repeat(43)
+    const mw = createHandshakeMiddleware(
+      makeOptions({
+        bootstrap: createBootstrapState({
+          readBootstrap: () => ({ bootstrapToken: injectedToken }),
+        }),
+      }),
+    )
+    const { req, res, captured } = mockReqRes({
+      host: 'localhost:5173',
+      secFetchDest: 'empty',
+      secFetchSite: 'none',
+    })
+    mw(req, res, () => {})
+    expect(captured.statusCode).toBe(200)
+    const headerToken = captured.headers['x-redesigner-bootstrap']
+    const body = JSON.parse(captured.body) as { bootstrapToken: string }
+    expect(headerToken).toBe(injectedToken)
+    expect(body.bootstrapToken).toBe(injectedToken)
+  })
+
+  it('readBootstrap returns null → 503 extension-disconnected', () => {
+    const mw = createHandshakeMiddleware(
+      makeOptions({
+        bootstrap: createBootstrapState({ readBootstrap: () => null }),
+      }),
+    )
+    const { req, res, captured } = mockReqRes({
+      host: 'localhost:5173',
+      secFetchDest: 'empty',
+      secFetchSite: 'none',
+    })
+    mw(req, res, () => {})
+    expect(captured.statusCode).toBe(503)
+    const body = JSON.parse(captured.body) as { apiErrorCode: string }
+    expect(body.apiErrorCode).toBe('extension-disconnected')
+  })
+
   it('request to a non-matching path → next() called', () => {
     const mw = createHandshakeMiddleware(makeOptions())
     const { req, res, captured } = mockReqRes({
