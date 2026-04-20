@@ -19,7 +19,7 @@ export const HandshakeSchema = z
     bootstrapToken: z.string().min(1),
     editor: EditorSchema,
     pluginVersion: z.string().min(1),
-    daemonVersion: z.string().min(1),
+    daemonVersion: z.string().min(1).nullable(),
   })
   .strict()
 export type Handshake = z.infer<typeof HandshakeSchema>

@@ -265,7 +265,7 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         if (!client) return html
         const daemonInfo = client.daemon.getDaemonInfo()
         // Include all 6 HandshakeSchema fields. When the daemon hasn't started
-        // yet daemonVersion defaults to 'unknown'; the extension can check
+        // yet daemonVersion defaults to null; the extension can check
         // the handshake endpoint for authoritative values.
         const payload = {
           wsUrl: daemonInfo ? `ws://127.0.0.1:${daemonInfo.port}/events` : '',
@@ -273,11 +273,17 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
           bootstrapToken: String(client.bootstrap.current()),
           editor: client.editor,
           pluginVersion: PLUGIN_VERSION,
-          daemonVersion: daemonInfo?.serverVersion ?? 'unknown',
+          daemonVersion: daemonInfo?.serverVersion ?? null,
         }
         const escaped = escapeHtmlAttrSingleQuote(JSON.stringify(payload))
         const tag = `<meta name="redesigner-daemon" content='${escaped}'>`
-        return html.replace('<head>', `<head>\n  ${tag}`)
+        const out = html.replace(/<head>/i, `<head>\n  ${tag}`)
+        if (out === html) {
+          config.logger.warn(
+            '[redesigner] transformIndexHtml: no <head> tag found; meta not injected',
+          )
+        }
+        return out
       },
     },
 

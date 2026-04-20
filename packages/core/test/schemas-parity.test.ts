@@ -33,7 +33,7 @@ test('Handshake sample round-trips', () => {
     bootstrapToken: 'abcdef012345',
     editor: 'vscode' as const,
     pluginVersion: '0.0.0',
-    daemonVersion: '0.0.0',
+    daemonVersion: null,
   }
   expect(HandshakeSchema.parse(sample)).toEqual(sample)
 })

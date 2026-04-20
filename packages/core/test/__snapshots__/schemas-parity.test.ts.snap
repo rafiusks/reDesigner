@@ -57,8 +57,15 @@ exports[`HandshakeSchema JSON Schema matches committed golden 1`] = `
       "type": "string",
     },
     "daemonVersion": {
-      "minLength": 1,
-      "type": "string",
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string",
+        },
+        {
+          "type": "null",
+        },
+      ],
     },
     "editor": {
       "enum": [

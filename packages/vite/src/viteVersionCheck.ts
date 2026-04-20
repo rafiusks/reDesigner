@@ -14,12 +14,18 @@
  */
 
 export function parseSemver(version: string): [number, number, number] {
+  if (typeof version !== 'string' || version.trim() === '') {
+    throw new Error(`[redesigner] could not parse Vite version: ${JSON.stringify(version)}`)
+  }
   // Strip pre-release suffix (anything after the first '-')
   const clean = version.split('-')[0] ?? version
   const parts = clean.split('.')
   const major = Number.parseInt(parts[0] ?? '0', 10)
   const minor = Number.parseInt(parts[1] ?? '0', 10)
   const patch = Number.parseInt(parts[2] ?? '0', 10)
+  if (Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)) {
+    throw new Error(`[redesigner] could not parse Vite version: ${JSON.stringify(version)}`)
+  }
   return [major, minor, patch]
 }
 
