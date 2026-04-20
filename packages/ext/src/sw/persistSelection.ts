@@ -1,4 +1,4 @@
-import { ComponentHandleSchema } from '@redesigner/core'
+import { ComponentHandleSchema } from '@redesigner/core/schemas'
 import { ensureSession } from './ensureSession.js'
 import type { TabHandshake, TabSession } from './messageRouter.js'
 import { putSelection } from './rest.js'
