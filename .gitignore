@@ -19,3 +19,6 @@ pnpm-debug.log
 
 # vitest-browser auto-screenshots on failure
 **/test/**/__screenshots__/
+
+# vite dep cache
+.vite/
