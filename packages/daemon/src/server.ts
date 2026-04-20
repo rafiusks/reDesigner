@@ -138,12 +138,9 @@ export function createDaemonServer(opts: ServerOptions): {
       const tabsMatch = TABS_SELECTION_RE.exec(pathname)
       if (tabsMatch !== null) {
         const tabIdRaw = Number(tabsMatch[1])
-        // Validate: positive integer (chrome tab IDs are always positive)
-        if (!Number.isInteger(tabIdRaw) || tabIdRaw <= 0) {
-          sendProblem(
-            res,
-            problem(400, 'InvalidRequest', 'tabId must be a positive integer', reqId),
-          )
+        // Validate: positive integer within safe range (chrome tab IDs are always positive)
+        if (!Number.isInteger(tabIdRaw) || tabIdRaw <= 0 || tabIdRaw > Number.MAX_SAFE_INTEGER) {
+          sendProblem(res, problem(400, 'InvalidRequest', 'tabId out of range', reqId))
           return
         }
         if (method === 'PUT') {

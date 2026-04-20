@@ -16,7 +16,7 @@ import { SUBPROTO_BEARER_PREFIX } from '../src/auth.js'
 import { createDaemonServer } from '../src/server.js'
 import { EventBus } from '../src/state/eventBus.js'
 import { ManifestWatcher } from '../src/state/manifestWatcher.js'
-import { SelectionState } from '../src/state/selectionState.js'
+import { SelectionState, TAB_SEQ_MAP_CAP } from '../src/state/selectionState.js'
 import type { RouteContext } from '../src/types.js'
 import { RpcCorrelation } from '../src/ws/rpcCorrelation.js'
 
@@ -464,5 +464,71 @@ describe('Legacy POST /selection — previously 200, now 410', () => {
     }
     const res = await rawRequest(h.port, 'POST', '/selection', h.bearer, oldBody)
     expect(res.status).toBe(410)
+  })
+})
+
+describe('tabId range validation', () => {
+  const bearer = crypto.randomBytes(32).toString('base64url')
+  const token = Buffer.from(bearer, 'utf8')
+  let h: Harness
+
+  beforeEach(async () => {
+    h = await listenOnEphemeral(token)
+  })
+  afterEach(async () => {
+    await h.close()
+  })
+
+  it('PUT /tabs/0/selection returns 400', async () => {
+    const res = await rawPut(h.port, '/tabs/0/selection', h.bearer, makeSelectionBody('node-z'))
+    expect(res.status).toBe(400)
+  })
+
+  it('PUT /tabs/99999999999999999999/selection returns 400', async () => {
+    const res = await rawPut(
+      h.port,
+      '/tabs/99999999999999999999/selection',
+      h.bearer,
+      makeSelectionBody('node-big'),
+    )
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('tabSeqMap LRU cap', () => {
+  it(`keeps map size at most TAB_SEQ_MAP_CAP (${TAB_SEQ_MAP_CAP}) after CAP+1 distinct tabIds`, () => {
+    const state = new SelectionState()
+    for (let tabId = 1; tabId <= TAB_SEQ_MAP_CAP + 1; tabId++) {
+      state.nextTabSeq(tabId)
+    }
+    expect(state.tabSeqMapSize()).toBeLessThanOrEqual(TAB_SEQ_MAP_CAP)
+  })
+
+  it('LRU touch: revisiting an existing tabId does not grow the map beyond CAP', () => {
+    const state = new SelectionState()
+    // Fill to cap
+    for (let tabId = 1; tabId <= TAB_SEQ_MAP_CAP; tabId++) {
+      state.nextTabSeq(tabId)
+    }
+    expect(state.tabSeqMapSize()).toBe(TAB_SEQ_MAP_CAP)
+    // Revisit an existing entry multiple times — size must not grow
+    for (let i = 0; i < 10; i++) {
+      state.nextTabSeq(1)
+    }
+    expect(state.tabSeqMapSize()).toBe(TAB_SEQ_MAP_CAP)
+  })
+
+  it('evicts the oldest entry first when over cap', () => {
+    const state = new SelectionState()
+    // Fill to cap; tabId=1 is the oldest
+    for (let tabId = 1; tabId <= TAB_SEQ_MAP_CAP; tabId++) {
+      state.nextTabSeq(tabId)
+    }
+    // Insert one more new tabId — should evict tabId=1 (oldest)
+    // Seq for tabId=1 was 1; after eviction nextTabSeq(1) should restart at 1
+    state.nextTabSeq(TAB_SEQ_MAP_CAP + 1)
+    expect(state.tabSeqMapSize()).toBe(TAB_SEQ_MAP_CAP)
+    // tabId=1 was evicted; fresh call should return 1 (reset counter)
+    expect(state.nextTabSeq(1)).toBe(1)
   })
 })

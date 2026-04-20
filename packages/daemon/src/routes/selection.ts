@@ -71,7 +71,7 @@ export async function handleSelectionPut(
     return
   }
 
-  const { nodes, meta } = parsed.data
+  const { nodes } = parsed.data
   // v0: single-select only; the schema enforces min(1)/max(1) on nodes.
   const handle = nodes[0]
   if (handle === undefined) {
@@ -107,7 +107,6 @@ export async function handleSelectionPut(
           staleManifest,
           tabId,
           selectionSeq: result.selectionSeq,
-          ...(meta !== undefined ? { source: meta.source } : {}),
         },
       })
     }

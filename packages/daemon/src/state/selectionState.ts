@@ -27,6 +27,8 @@ function getSelectionId(r: SelectionRecord): string {
   return r.handle.id
 }
 
+export const TAB_SEQ_MAP_CAP = 256
+
 export class SelectionState {
   private current: SelectionRecord | null = null
   private history: SelectionRecord[] = []
@@ -34,10 +36,23 @@ export class SelectionState {
   /** Per-tab monotonic sequence counter. Keyed by tabId (positive integer). */
   private readonly tabSeqMap = new Map<number, number>()
 
+  /** Number of entries currently in tabSeqMap (for test visibility). */
+  tabSeqMapSize(): number {
+    return this.tabSeqMap.size
+  }
+
   /** Increment and return the per-tab seq for the given tabId. */
   nextTabSeq(tabId: number): number {
     const prev = this.tabSeqMap.get(tabId) ?? 0
     const next = prev + 1
+    if (this.tabSeqMap.has(tabId)) {
+      // LRU touch: delete then re-insert moves to Map insertion-order tail.
+      this.tabSeqMap.delete(tabId)
+    } else if (this.tabSeqMap.size >= TAB_SEQ_MAP_CAP) {
+      // Evict the oldest (insertion-order head).
+      const oldest = this.tabSeqMap.keys().next().value as number
+      this.tabSeqMap.delete(oldest)
+    }
     this.tabSeqMap.set(tabId, next)
     return next
   }
