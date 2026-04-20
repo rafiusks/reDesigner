@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@redesigner/core": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19",
     "zod": "^3.25.0 || ^4.0.0"
   },
   "devDependencies": {
