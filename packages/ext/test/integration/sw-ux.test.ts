@@ -142,18 +142,18 @@ describe('panelPort — snapshot ref stability', () => {
     expect(port.getSnapshot(1, 10).status).toBe('connected')
   })
 
-  it('onConnect wires port and replies with current snapshot', () => {
+  it('onConnect: panel-hello → SW pushes snapshot with correct keying', () => {
     const port = createPanelPort()
-    port.push(1, 10, { status: 'connected' })
 
     const messages: unknown[] = []
+    const messageListeners: ((m: unknown) => void)[] = []
     const disconnectListeners: (() => void)[] = []
     const fakePort = {
-      name: 'panel-1:10',
-      sender: { tab: { id: 10, windowId: 1 } as chrome.tabs.Tab },
+      name: 'panel',
+      sender: {}, // side panels have no sender.tab
       postMessage: (msg: unknown) => messages.push(msg),
       onMessage: {
-        addListener: vi.fn(),
+        addListener: (fn: (m: unknown) => void) => messageListeners.push(fn),
         removeListener: vi.fn(),
         hasListener: vi.fn(),
       },
@@ -165,10 +165,18 @@ describe('panelPort — snapshot ref stability', () => {
     } as unknown as chrome.runtime.Port
 
     port.onConnect(fakePort)
+    expect(messages.length).toBe(0) // no push until hello arrives
+    expect(messageListeners.length).toBe(1)
+
+    // Panel sends its hello with resolved IDs.
+    messageListeners[0]?.({ type: 'panel-hello', windowId: 1, tabId: 10 })
     expect(messages.length).toBeGreaterThanOrEqual(1)
-    const firstMsg = messages[0] as { snapshot: PanelSnapshot }
+    const firstMsg = messages[0] as { type: string; snapshot: PanelSnapshot }
+    expect(firstMsg.type).toBe('snapshot')
     expect(firstMsg.snapshot).toBeDefined()
     expect(firstMsg.snapshot.status).toBe('connected')
+    expect(firstMsg.snapshot.windowId).toBe(1)
+    expect(firstMsg.snapshot.tabId).toBe(10)
 
     // disconnect cleans up — just verify it doesn't throw
     for (const fn of disconnectListeners) fn()

@@ -56,7 +56,7 @@ export function App(props: AppProps): JSX.Element {
         <div data-testid="panel-skeleton">loading…</div>
       ) : (
         <>
-          <Welcome />
+          <Welcome serverUrl={snapshot.serverUrl} />
           <PickerToggle armed={snapshot.pickerArmed} />
           {snapshot.status === 'mcp-missing' ? (
             <EmptyStates reason="mcp-missing" />

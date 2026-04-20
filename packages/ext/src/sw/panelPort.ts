@@ -13,6 +13,8 @@ export interface PanelSnapshot {
   readonly pickerArmed: boolean
   readonly recent: readonly unknown[]
   readonly version: number
+  /** Tab origin once the CS registers — drives the Welcome component copy. */
+  readonly serverUrl: string | null
 }
 
 export interface PanelPort {
@@ -45,11 +47,13 @@ function makeDefaultSnapshot(windowId: number, tabId: number): PanelSnapshot {
     pickerArmed: false,
     recent: [],
     version: 0,
+    serverUrl: null,
   }
 }
 
 export function createPanelPort(): PanelPort {
   const cache = new Map<string, PanelSnapshot>()
+  const ports = new Map<string, chrome.runtime.Port>()
 
   function getOrCreate(windowId: number, tabId: number): PanelSnapshot {
     const key = makeKey(windowId, tabId)
@@ -76,6 +80,17 @@ export function createPanelPort(): PanelPort {
       version: current.version + 1,
     }
     cache.set(key, next)
+    // If a panel is currently subscribed for this (window, tab), forward the
+    // new snapshot. postMessage throws synchronously on a disconnected port —
+    // swallow so callers don't need to care about race conditions.
+    const openPort = ports.get(key)
+    if (openPort) {
+      try {
+        openPort.postMessage({ type: 'snapshot', snapshot: next })
+      } catch {
+        ports.delete(key)
+      }
+    }
   }
 
   function getSnapshot(windowId: number, tabId: number): PanelSnapshot {
@@ -94,19 +109,36 @@ export function createPanelPort(): PanelPort {
   }
 
   function onConnect(port: chrome.runtime.Port): void {
-    // Extract tabId and windowId from port sender or name
-    const tabId = port.sender?.tab?.id
-    const windowId = port.sender?.tab?.windowId
+    // Side panels don't populate `port.sender.tab` (the panel isn't a tab).
+    // Wait for the panel's `panel-hello` init message, which carries the
+    // windowId/tabId the panel resolved from its URL + chrome.tabs.query.
+    let windowId: number | undefined
+    let tabId: number | undefined
 
-    if (tabId !== undefined && windowId !== undefined) {
-      const snap = getOrCreate(windowId, tabId)
-      port.postMessage({ snapshot: snap })
-    }
+    port.onMessage.addListener((raw) => {
+      if (
+        typeof raw === 'object' &&
+        raw !== null &&
+        (raw as { type?: unknown }).type === 'panel-hello'
+      ) {
+        const hello = raw as { windowId?: unknown; tabId?: unknown }
+        if (typeof hello.windowId === 'number' && typeof hello.tabId === 'number') {
+          windowId = hello.windowId
+          tabId = hello.tabId
+          ports.set(makeKey(windowId, tabId), port)
+          // Bump version so the skeleton clears (panel's isSkeleton guard is
+          // `status === 'hydrating' && version === 0`). push() will forward
+          // the new snapshot to this port via the `ports` map.
+          push(windowId, tabId, { status: 'connected' })
+        }
+      }
+    })
 
     port.onDisconnect.addListener(() => {
-      // Cleanup: no persistent state to remove, but mark disconnected if tracked
-      if (tabId !== undefined && windowId !== undefined) {
-        const current = cache.get(makeKey(windowId, tabId))
+      if (windowId !== undefined && tabId !== undefined) {
+        const key = makeKey(windowId, tabId)
+        ports.delete(key)
+        const current = cache.get(key)
         if (current) {
           push(windowId, tabId, { status: 'disconnected' })
         }
