@@ -56,7 +56,11 @@ const BodySchema = ExchangeRequestSchema
 
 // chrome-extension IDs are exactly 32 lowercase letters.
 const EXT_ID_REGEX = /^[a-z]{32}$/
-const ORIGIN_REGEX = /^chrome-extension:\/\/([a-z]{32})$/
+// Exported so server.ts + ws/events.ts can parse the extId out of Origin for
+// the session-token auth fallback. Single source of truth for what the
+// /exchange handler considers a valid Origin.
+export const CHROME_EXT_ORIGIN_REGEX = /^chrome-extension:\/\/([a-z]{32})$/
+const ORIGIN_REGEX = CHROME_EXT_ORIGIN_REGEX
 
 // Per-(Origin, peerAddr) failed-exchange bucket config.
 // burst 5, rate 1/s: honest clients retry at human scale;

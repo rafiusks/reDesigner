@@ -12,7 +12,7 @@ import {
   rejectCookieIfPresent,
 } from './routes/cors.js'
 import { handleDebugStateGet } from './routes/debug.js'
-import { createExchangeRoute } from './routes/exchange.js'
+import { CHROME_EXT_ORIGIN_REGEX, createExchangeRoute } from './routes/exchange.js'
 import { handleHealthGet } from './routes/health.js'
 import { handleManifestGet } from './routes/manifest.js'
 import { createRevalidateRoute } from './routes/revalidate.js'
@@ -170,9 +170,26 @@ export function createDaemonServer(opts: ServerOptions): {
       return
     }
 
-    // 5–7. Auth: extract bearer, normalized constant-time compare.
-    //      Unauth bucket applies ONLY when auth is missing/invalid (valid-token bypass).
-    const authed = compareToken(extractBearer(req), opts.token)
+    // 5–7. Auth: extract bearer, normalized constant-time compare against the
+    //      long-lived daemon authToken. If that fails, fall back to treating
+    //      the bearer as a session token minted via /__redesigner/exchange —
+    //      valid iff the Origin is a pinned chrome-extension:// and the token
+    //      is in the active-sessions map for that ext-ID. This is the path
+    //      the chrome extension uses: the ext never sees the daemon authToken,
+    //      so every REST call from the SW carries a session token instead.
+    //      Unauth bucket applies ONLY when both checks miss.
+    const providedBearer = extractBearer(req)
+    let authed = compareToken(providedBearer, opts.token)
+    if (!authed && providedBearer !== undefined) {
+      const originHeader = req.headers.origin
+      const originVal = Array.isArray(originHeader) ? originHeader[0] : originHeader
+      if (typeof originVal === 'string') {
+        const match = CHROME_EXT_ORIGIN_REGEX.exec(originVal)
+        if (match?.[1]) {
+          authed = exchangeRoute.isSessionActive(match[1], providedBearer)
+        }
+      }
+    }
 
     if (!authed) {
       if (!unauthBucket.tryConsume()) {
@@ -342,6 +359,7 @@ export function createDaemonServer(opts: ServerOptions): {
     server,
     port: opts.port,
     expectedToken: opts.token,
+    exchangeRoute,
     eventBus: opts.ctx.eventBus,
     selectionState: opts.ctx.selectionState,
     manifestWatcher: opts.ctx.manifestWatcher,

@@ -222,16 +222,16 @@ describe('exchange + revalidate integration', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 2. After exchange, authToken still works on GET /manifest (not 401).
-  //    NOTE: The sessionToken from exchange is scoped to exchange/revalidate
-  //    routes only. Regular daemon REST routes (like /manifest) use the
-  //    daemon's fixed authToken (opts.token), not the exchange-minted
-  //    sessionToken. This test verifies the server is up and auth works
-  //    after an exchange, using the authToken on /manifest.
-  //    /manifest returns 503 NotReady when no manifest is loaded — that is OK;
-  //    we just need NOT 401 to prove the Bearer was accepted.
+  // 2. sessionToken from exchange works on GET /manifest → not 401.
+  //    The ext never sees the daemon authToken (it's in the on-disk handoff
+  //    file), so the SW must use exchange-minted sessionTokens for all
+  //    REST calls. server.ts's Bearer check falls back to
+  //    exchange.isSessionActive(extId, bearer) when the authToken compare
+  //    misses, with extId parsed from the chrome-extension:// Origin.
+  //    /manifest returns 503 NotReady when no manifest is loaded — that is
+  //    OK; we just need NOT 401 to prove the Bearer was accepted.
   // -------------------------------------------------------------------------
-  test('after exchange, authToken works on GET /manifest → not 401', async () => {
+  test('sessionToken works on GET /manifest → not 401', async () => {
     const clientNonce = crypto.randomUUID()
     const exchangeRes = await fetch(`${h.url}/__redesigner/exchange`, {
       method: 'POST',
@@ -245,10 +245,23 @@ describe('exchange + revalidate integration', () => {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     expect(exchangeRes.status).toBe(200)
-    // Confirm we got a valid session token back (proves exchange succeeded)
-    ExchangeResponseSchema.parse(await exchangeRes.json())
+    const data = ExchangeResponseSchema.parse(await exchangeRes.json())
 
-    // Regular daemon routes use the daemon authToken, not the sessionToken.
+    const manifestRes = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: `Bearer ${data.sessionToken}`,
+        Origin: CHROME_EXT_ORIGIN,
+        Host: `127.0.0.1:${h.port}`,
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(manifestRes.status).not.toBe(401)
+  })
+
+  // Also confirm the authToken path still works — existing internal tooling
+  // (tests, CLI shutdown helpers, vite bridge) authenticate directly with
+  // the handoff-sourced authToken and must not regress.
+  test('authToken still works on GET /manifest (backward compat) → not 401', async () => {
     const manifestRes = await fetch(`${h.url}/manifest`, {
       headers: {
         Authorization: `Bearer ${h.authToken}`,
@@ -257,6 +270,34 @@ describe('exchange + revalidate integration', () => {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     expect(manifestRes.status).not.toBe(401)
+  })
+
+  // Session token with missing/wrong Origin → 401 (Origin drives the extId
+  // lookup; without it the session-fallback short-circuits).
+  test('sessionToken with no Origin → 401', async () => {
+    const clientNonce = crypto.randomUUID()
+    const exchangeRes = await fetch(`${h.url}/__redesigner/exchange`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: CHROME_EXT_ORIGIN,
+        'Sec-Fetch-Site': 'cross-site',
+        Host: `127.0.0.1:${h.port}`,
+      },
+      body: JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    const data = ExchangeResponseSchema.parse(await exchangeRes.json())
+
+    const manifestRes = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: `Bearer ${data.sessionToken}`,
+        Host: `127.0.0.1:${h.port}`,
+        // Intentionally no Origin.
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(manifestRes.status).toBe(401)
   })
 
   // -------------------------------------------------------------------------
