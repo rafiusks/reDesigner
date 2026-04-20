@@ -147,11 +147,15 @@ jobs:
           # Assert the panel chunk stays under budget. pnpm -r run build earlier
           # in this job already produced packages/ext/dist/; re-running would
           # be a redundant second ext build.
-          # 250KB raw (uncompressed) is the v0 budget. React 19 + Zod +
-          # components land at ~206KB today; 250KB gives ~20% headroom for
-          # bugfix iterations. v0.1 follow-up: code-split the MCP snippet
-          # UI and the Debug panel to push this back to 200KB.
-          BUDGET_KB=250
+          # React 19 runtime dominates the panel chunk — panel-specific code
+          # is ~5-8KB, the other ~200KB is react + react-dom + scheduler.
+          # Code-splitting the panel's gated surfaces (MCP setup card,
+          # Debug drawer) produces <2KB additional lazy chunks; the main
+          # chunk still hovers at 205-206KB. 210KB budget locks in the
+          # current floor with ~4KB regression headroom; a true 200KB
+          # budget would require a Preact or preact/compat migration
+          # (tracked as v0.2 work).
+          BUDGET_KB=210
           ASSETS=packages/ext/dist/assets
           # CRXJS names the panel chunk `index.html-<hash>.js` (from the HTML
           # entry), not `panel-*`. Proxy "panel bundle size" as "largest JS

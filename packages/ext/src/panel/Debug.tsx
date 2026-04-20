@@ -1,15 +1,17 @@
 /**
- * Debug drawer — gated by Shift+Alt+D.
+ * Debug — keyboard-shortcut wrapper. Renders nothing until Shift+Alt+D is
+ * pressed; the drawer body is a lazy chunk (./DebugDrawer.tsx) so steady-state
+ * panel bytes don't include the dialog/inline styles until first open.
  *
  * MUST NOT open if:
  *  - Only Shift+D (VoiceOver conflict)
  *  - Target is input, textarea, or [contenteditable]
- *
- * Shows: tabId, windowId, version, frame log, connection state.
  */
 
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import type { JSX } from 'react'
+
+const DebugDrawer = lazy(() => import('./DebugDrawer.js'))
 
 export interface DebugProps {
   tabId: number
@@ -25,7 +27,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return false
 }
 
-export function Debug(props: DebugProps): JSX.Element {
+export function Debug(props: DebugProps): JSX.Element | null {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -44,57 +46,10 @@ export function Debug(props: DebugProps): JSX.Element {
     }
   }, [])
 
+  if (!open) return null
   return (
-    <>
-      {open && (
-        <dialog
-          data-testid="debug-drawer"
-          aria-label="Debug information"
-          open
-          style={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            margin: 0,
-            width: '100%',
-            background: '#1e1e1e',
-            color: '#d4d4d4',
-            fontFamily: 'monospace',
-            fontSize: 11,
-            padding: '12px',
-            zIndex: 9999,
-            maxHeight: '40vh',
-            overflowY: 'auto',
-            borderTop: '2px solid #4caf50',
-            border: 'none',
-            boxSizing: 'border-box',
-          }}
-        >
-          <div style={{ marginBottom: 4 }}>
-            <strong>Debug Panel</strong>
-          </div>
-          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-            <tbody>
-              <tr>
-                <td style={{ paddingRight: 12, color: '#888' }}>tabId</td>
-                <td>{props.tabId}</td>
-              </tr>
-              <tr>
-                <td style={{ paddingRight: 12, color: '#888' }}>windowId</td>
-                <td>{props.windowId}</td>
-              </tr>
-              <tr>
-                <td style={{ paddingRight: 12, color: '#888' }}>version</td>
-                <td>{props.version}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div style={{ marginTop: 8, color: '#888', fontSize: 10 }}>
-            Press Shift+Alt+D to close
-          </div>
-        </dialog>
-      )}
-    </>
+    <Suspense fallback={null}>
+      <DebugDrawer tabId={props.tabId} windowId={props.windowId} version={props.version} />
+    </Suspense>
   )
 }
