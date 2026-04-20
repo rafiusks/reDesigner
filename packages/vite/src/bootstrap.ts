@@ -24,34 +24,24 @@
  *   - `Content-Type: application/json`
  *   - Body: HandshakeSchema-shaped JSON
  *
- * The token is minted once per `createBootstrapState()` call (at plugin boot);
- * `rotate()` generates a fresh token in place so a future task (daemon-side
- * rotation push) can swap it atomically without re-registering the middleware.
+ * The token is read from the daemon handoff file on each request via the
+ * injected `readBootstrap` reader. When the daemon has not yet started,
+ * `current()` returns null and the middleware degrades to 503.
  */
 
-import crypto from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { type Editor, HandshakeSchema } from '@redesigner/core/schemas'
-import { type BootstrapToken, asToken } from '@redesigner/core/types'
 
 export interface BootstrapState {
-  current(): BootstrapToken
-  rotate(): BootstrapToken
+  current(): string | null
 }
 
-export function createBootstrapState(): BootstrapState {
-  let token = mint()
+export function createBootstrapState(opts: {
+  readBootstrap: () => { bootstrapToken: string } | null
+}): BootstrapState {
   return {
-    current: () => token,
-    rotate: () => {
-      token = mint()
-      return token
-    },
+    current: () => opts.readBootstrap()?.bootstrapToken ?? null,
   }
-}
-
-function mint(): BootstrapToken {
-  return asToken(crypto.randomBytes(32).toString('base64url'), 'bootstrap')
 }
 
 export interface DaemonInfo {
@@ -62,7 +52,7 @@ export interface DaemonInfo {
 export interface HandshakeMiddlewareOptions {
   /** Returns the current Vite dev-server port (read lazily — http.listen is async). */
   viteServerPort: () => number | null
-  /** Bootstrap state accessor; `current()` is re-read per request for rotate-awareness. */
+  /** Bootstrap state accessor; `current()` is re-read per request. Returns null when daemon not ready. */
   bootstrap: BootstrapState
   /** Returns daemon `{ port, serverVersion }` if ready, or null if not yet started. */
   getDaemonInfo: () => DaemonInfo | null
@@ -169,6 +159,21 @@ export function createHandshakeMiddleware(opts: HandshakeMiddlewareOptions): Han
     // Success: emit headers + body. Body values are validated through the schema
     // to prevent drift between the plugin and core's HandshakeSchema.
     const token = opts.bootstrap.current()
+    if (token === null) {
+      res.statusCode = 503
+      res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
+      writeNoStoreHeaders(res)
+      res.end(
+        JSON.stringify({
+          type: 'https://redesigner.dev/errors/extension-disconnected',
+          title: 'ExtensionDisconnected',
+          status: 503,
+          apiErrorCode: 'extension-disconnected',
+          detail: 'Daemon not started; retry shortly',
+        }),
+      )
+      return
+    }
     let body: ReturnType<typeof HandshakeSchema.parse>
     try {
       body = HandshakeSchema.parse({

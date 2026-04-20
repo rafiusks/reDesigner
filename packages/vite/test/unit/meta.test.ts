@@ -264,7 +264,6 @@ describe('transformIndexHtml: meta tag injection', () => {
     const r2 = callTransformIndexHtml(p, FAKE_HTML)
     expect(extract(r1)).toBe(extract(r2))
     expect(typeof extract(r1)).toBe('string')
-    expect(extract(r1).length).toBeGreaterThan(0)
   })
 
   it('returns HTML unchanged when client not initialized (no configResolved)', async () => {
