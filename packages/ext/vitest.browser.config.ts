@@ -10,7 +10,6 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['test/picker/**/*.spec.ts'],
-    isolate: true,
     browser: {
       enabled: true,
       provider: 'playwright',

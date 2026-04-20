@@ -380,6 +380,63 @@ describe('hitTest', () => {
     }
   })
 
+  it('open-shadow all-filtered: returns later outer candidate, not the shadow host', () => {
+    // Place a target underneath the open-shadow host in paint order
+    // (earlier in DOM, same coordinates, lower z-index).
+    const laterTarget = document.createElement('div')
+    laterTarget.id = 'later-target'
+    Object.assign(laterTarget.style, {
+      position: 'absolute',
+      left: '60px',
+      top: '60px',
+      width: '100px',
+      height: '100px',
+      background: 'teal',
+    })
+    document.body.appendChild(laterTarget)
+
+    picker = mountPicker({ topLayer: 'popover' })
+
+    // Open-shadow host overlapping laterTarget. Its shadow root only contains
+    // content placed far off-screen, so at (x, y) shadowRoot.elementsFromPoint
+    // yields only the host element itself — skipped by the child===el guard.
+    // All inner candidates are therefore exhausted with no qualified result.
+    // Correct behaviour (with the fall-through fix): return null so the outer
+    // loop continues and resolves laterTarget. Old buggy behaviour: fall
+    // through to `return el` which yields shadowHost incorrectly.
+    const shadowHost = document.createElement('div')
+    Object.assign(shadowHost.style, {
+      position: 'absolute',
+      left: '60px',
+      top: '60px',
+      width: '100px',
+      height: '100px',
+      zIndex: '100',
+    })
+    document.body.appendChild(shadowHost)
+    const openRoot = shadowHost.attachShadow({ mode: 'open' })
+    const offscreen = document.createElement('div')
+    Object.assign(offscreen.style, {
+      position: 'absolute',
+      left: '2000px',
+      top: '2000px',
+      width: '10px',
+      height: '10px',
+    })
+    openRoot.appendChild(offscreen)
+
+    const { x, y } = centerOf(laterTarget)
+    const hit = hitTest({
+      x,
+      y,
+      pickerShadowHost: picker.host,
+      pickerShadowRoot: picker.root,
+    })
+
+    expect(hit).not.toBe(shadowHost)
+    expect(hit).toBe(laterTarget)
+  })
+
   it('returns null when only the picker is at the hit point', () => {
     picker = mountPicker({ topLayer: 'popover' })
     const { x, y } = centerOf(picker.host)

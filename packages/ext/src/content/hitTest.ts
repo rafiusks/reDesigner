@@ -45,13 +45,6 @@ export function hitTest(args: HitTestArgs): Element | null {
   return null
 }
 
-/**
- * For a single outer-document candidate, either:
- *   - reject it if it's the picker host or any of its shadow descendants;
- *   - recurse into its open shadow root if it has one and return the
- *     innermost non-picker descendant;
- *   - otherwise return the element itself.
- */
 function resolveInShadow(
   el: Element,
   x: number,
@@ -74,17 +67,13 @@ function resolveInShadow(
       const resolved = resolveInShadow(child, x, y, pickerShadowHost, pickerShadowRoot)
       if (resolved) return resolved
     }
-    // Nothing qualified inside the open shadow — fall back to the host.
+    // Nothing qualified inside the open shadow — do not fall through to the host.
+    return null
   }
 
   return el
 }
 
-/**
- * Returns true iff `el`'s root chain walks back into `pickerShadowRoot` at
- * any depth. We climb through successive shadow hosts to handle nested
- * shadow retargeting (e.g. slot projection from page shadow into ours).
- */
 function isInPickerRoot(el: Element, pickerShadowRoot: ShadowRoot | null): boolean {
   if (!pickerShadowRoot) return false
   const visited = new Set<Node>()
