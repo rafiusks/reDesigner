@@ -1,10 +1,39 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { transformAsync } from '@babel/core'
 import { EditorSchema } from '@redesigner/core/schemas'
 import type { Plugin, ResolvedConfig } from 'vite'
 import viteManifest from 'vite/package.json' with { type: 'json' }
 import { redesignerBabelPlugin } from './babel/plugin'
+
+/**
+ * FS-walk @redesigner/daemon from the user's project root. Pure file-system
+ * traversal — no require/import resolver calls — so tsx's injected resolve
+ * paths and pnpm's hoisted .pnpm/node_modules store can't leak workspace
+ * packages into contexts where the user hasn't declared daemon as a dep.
+ */
+function resolveDaemonFromProject(projectRoot: string): string | null {
+  let dir = projectRoot
+  while (dir !== path.dirname(dir)) {
+    const pkgJson = path.join(dir, 'node_modules', '@redesigner', 'daemon', 'package.json')
+    if (existsSync(pkgJson)) {
+      const pkg = JSON.parse(readFileSync(pkgJson, 'utf8')) as {
+        main?: string
+        exports?: { '.'?: { import?: string; default?: string } | string }
+      }
+      const dotExport = pkg.exports?.['.']
+      const entry =
+        (typeof dotExport === 'object' && (dotExport.import ?? dotExport.default)) ||
+        (typeof dotExport === 'string' ? dotExport : undefined) ||
+        pkg.main ||
+        'index.js'
+      return path.join(path.dirname(pkgJson), entry)
+    }
+    dir = path.dirname(dir)
+  }
+  return null
+}
 import {
   type BootstrapState,
   HANDSHAKE_PATH,
@@ -203,8 +232,16 @@ export default function redesigner(options: RedesignerOptions = {}): Plugin {
         mode: daemonOpts.mode,
         projectRoot: c.projectRoot,
         manifestPath: c.manifestPath,
-        // biome-ignore lint/suspicious/noExplicitAny: dynamic import path; TS static analyser requires string literal
-        importer: () => import('@redesigner/daemon' as any),
+        importer: async () => {
+          const entry = resolveDaemonFromProject(c.projectRoot)
+          if (entry === null) {
+            throw Object.assign(
+              new Error(`Cannot find module '@redesigner/daemon' under ${c.projectRoot}`),
+              { code: 'ERR_MODULE_NOT_FOUND' },
+            )
+          }
+          return import(pathToFileURL(entry).href)
+        },
         logger: makeLogger(config.logger),
       })
 
