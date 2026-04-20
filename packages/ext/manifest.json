@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "reDesigner",
+  "version": "0.0.0",
+  "description": "Pick a DOM element in your dev build and surface it to Claude Code via the reDesigner daemon.",
+  "minimum_chrome_version": "120",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxEmyWhV0SaoeaibyrQ70Hp2cYGusdtCchyZJ8jgQDPQwp82P/rVF83aTFzEQz923mETB/CvcxdrQ0KlnaIGoQ3gBpUZRZrz7mce8ANTNuqdbVQyBYWGorgJKMOVp939Jn6ulMCPvKuAbj+xEhULVPN3cndbDhWQ9yYPWlt6VHBFffH1D9CxdLYxzLq0oFFISN3yvVaNcerN5l+Ke0nCPQQ+3ss/szZ2XMRYNrW4rceWryAm7JhOCJXpVPn30qvdGYUOqx1ToXcmpVmw1PRRgh6CAP2fr22fvOHLHDZ3eoTS/Iza6RFTwK5Tr9ep1ei6hPyRc5RgoQ0m1zyOxpz61ZwIDAQAB",
+  "action": {
+    "default_title": "reDesigner",
+    "default_icon": {
+      "16": "public/icons/icon-16.png",
+      "32": "public/icons/icon-32.png",
+      "48": "public/icons/icon-48.png",
+      "128": "public/icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "public/icons/icon-16.png",
+    "32": "public/icons/icon-32.png",
+    "48": "public/icons/icon-48.png",
+    "128": "public/icons/icon-128.png"
+  },
+  "side_panel": {
+    "default_path": "src/panel/index.html"
+  },
+  "background": {
+    "service_worker": "src/sw/index.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "http://*.localhost/*",
+        "http://[::1]/*"
+      ],
+      "run_at": "document_start",
+      "js": ["src/content/bootstrap.ts"]
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "http://*.localhost/*",
+        "http://[::1]/*"
+      ],
+      "run_at": "document_end",
+      "js": ["src/content/index.ts"]
+    }
+  ],
+  "commands": {
+    "arm-picker": {
+      "suggested_key": {
+        "default": "Alt+Shift+D",
+        "mac": "Alt+Shift+D"
+      },
+      "description": "Arm picker"
+    }
+  },
+  "permissions": ["scripting", "storage", "tabs", "sidePanel", "alarms"],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "http://*.localhost/*",
+    "http://[::1]/*"
+  ],
+  "web_accessible_resources": []
+}
