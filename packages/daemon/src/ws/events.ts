@@ -156,6 +156,9 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
     }
     try {
       wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on('error', () => {
+          /* client dropped during close handshake; nothing to clean up */
+        })
         try {
           ws.close(code, reasonText)
         } catch {
@@ -293,7 +296,13 @@ export function attachEvents(opts: EventsOptions): { close: () => void } {
         subproto: subprotoVersions,
         q: qVersions,
       })
-      const reason = encodeCloseReason({ accepted: [...SUPPORTED_WS_VERSIONS] })
+      let reason: string
+      try {
+        reason = encodeCloseReason({ accepted: [...SUPPORTED_WS_VERSIONS] })
+      } catch {
+        socket.destroy()
+        return
+      }
       // Echo the client's first versioned offer so their ws-client accepts
       // the subprotocol ack and processes the 4406 close frame.
       const echo = subproto.versionedOffers[0] ?? null

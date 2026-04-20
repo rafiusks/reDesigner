@@ -26,6 +26,7 @@ import { EventBus } from '../src/state/eventBus.js'
 import { ManifestWatcher } from '../src/state/manifestWatcher.js'
 import { SelectionState } from '../src/state/selectionState.js'
 import type { RouteContext } from '../src/types.js'
+import { parseQueryVersions } from '../src/ws/events.js'
 import { RpcCorrelation } from '../src/ws/rpcCorrelation.js'
 
 // ---------------------------------------------------------------------------
@@ -310,6 +311,45 @@ describe('extractSubprotocolToken — unit', () => {
     const out = extractSubprotocolToken(r)
     expect(out.versionedOffers).toEqual(['redesigner-v1'])
     expect(out.bearer).toBe('tok')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit: parseQueryVersions
+// ---------------------------------------------------------------------------
+
+describe('parseQueryVersions — unit', () => {
+  it('null/undefined → null (param absent)', () => {
+    expect(parseQueryVersions(null)).toBeNull()
+    expect(parseQueryVersions(undefined)).toBeNull()
+  })
+
+  it('empty string → [] (param present but empty)', () => {
+    expect(parseQueryVersions('')).toEqual([])
+  })
+
+  it('zero filtered out → []', () => {
+    expect(parseQueryVersions('0')).toEqual([])
+  })
+
+  it('trailing comma tolerated → [1]', () => {
+    expect(parseQueryVersions('1,')).toEqual([1])
+  })
+
+  it('negative rejected by regex → []', () => {
+    expect(parseQueryVersions('-1')).toEqual([])
+  })
+
+  it('float rejected by regex → []', () => {
+    expect(parseQueryVersions('1.5')).toEqual([])
+  })
+
+  it('whitespace trimmed → [1]', () => {
+    expect(parseQueryVersions(' 1 ')).toEqual([1])
+  })
+
+  it('dedupe + desc sort → [2, 1]', () => {
+    expect(parseQueryVersions('1,2,1')).toEqual([2, 1])
   })
 })
 
