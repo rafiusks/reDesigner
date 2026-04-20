@@ -12,8 +12,10 @@ import {
   rejectCookieIfPresent,
 } from './routes/cors.js'
 import { handleDebugStateGet } from './routes/debug.js'
+import { createExchangeRoute } from './routes/exchange.js'
 import { handleHealthGet } from './routes/health.js'
 import { handleManifestGet } from './routes/manifest.js'
+import { createRevalidateRoute } from './routes/revalidate.js'
 import {
   handleSelectionGet,
   handleSelectionPut,
@@ -46,9 +48,8 @@ const OPTIONS_TABLE: Array<{ path: string; methods: string }> = [
   { path: '/computed_styles', methods: 'POST' },
   { path: '/dom_subtree', methods: 'POST' },
   { path: '/shutdown', methods: 'POST' },
-  // /__redesigner/* routes are handled by exchange/revalidate standalone factories
-  // and are not in this table. If they appear in server.ts in the future,
-  // add them here with 'POST'.
+  { path: '/__redesigner/exchange', methods: 'POST' },
+  { path: '/__redesigner/revalidate', methods: 'POST' },
 ]
 
 export function createDaemonServer(opts: ServerOptions): {
@@ -68,6 +69,24 @@ export function createDaemonServer(opts: ServerOptions): {
 
   const serverHeader = `@redesigner/daemon/${opts.ctx.serverVersion}`
   const isAllowedHost = hostAllow(opts.port)
+
+  // Exchange + revalidate: constructed once per server instance so their
+  // in-memory state (consumed-nonce set, active-session map, per-origin
+  // failed-exchange buckets, TOFU pin cache) is consistent across requests.
+  // Revalidate shares the exchange handle so it can see the same nonce set
+  // and rotate the same active-session entries.
+  const exchangeRoute = createExchangeRoute({
+    rootToken: opts.rootToken,
+    bootstrapToken: opts.bootstrapToken,
+    projectRoot: opts.ctx.projectRoot,
+    logger: opts.ctx.logger,
+  })
+  const revalidateRoute = createRevalidateRoute({
+    exchange: exchangeRoute,
+    rootToken: opts.rootToken,
+    projectRoot: opts.ctx.projectRoot,
+    logger: opts.ctx.logger,
+  })
 
   const server = http.createServer((req, res) => {
     // Fire-and-forget; any unhandled rejection is caught inside.
@@ -127,6 +146,27 @@ export function createDaemonServer(opts: ServerOptions): {
       }
       // Unknown path: 404 with Vary.
       sendProblem(res, problem(404, 'NotFound', `no route for OPTIONS ${pathname}`, reqId), req)
+      return
+    }
+
+    // Pre-auth carve-out: /__redesigner/* routes authenticate via their own
+    // request-body tokens, Origin gate, and Sec-Fetch-Site gate (see
+    // routes/exchange.ts + routes/revalidate.ts). They MUST bypass the Bearer
+    // check below, because no legitimate client can have the daemon's
+    // authToken before completing an exchange.
+    //
+    // SECURITY: exact pathname match, POST only. Any pathname normalization
+    // or prefix match here would be a Bearer-auth bypass for every route.
+    // The unauth bucket caps bootstrap-attempt rate independent of the
+    // per-(Origin, peerAddr) buckets inside each handler.
+    if (method === 'POST' && pathname === '/__redesigner/exchange') {
+      if (!tryBucket(res, req, reqId, unauthBucket)) return
+      await exchangeRoute.handler(req, res, reqId)
+      return
+    }
+    if (method === 'POST' && pathname === '/__redesigner/revalidate') {
+      if (!tryBucket(res, req, reqId, unauthBucket)) return
+      await revalidateRoute.handler(req, res, reqId)
       return
     }
 
@@ -351,7 +391,9 @@ function isKnownPath(pathname: string): boolean {
     pathname === '/manifest' ||
     pathname === '/computed_styles' ||
     pathname === '/dom_subtree' ||
-    pathname === '/shutdown'
+    pathname === '/shutdown' ||
+    pathname === '/__redesigner/exchange' ||
+    pathname === '/__redesigner/revalidate'
   )
 }
 
@@ -366,6 +408,8 @@ function allowedMethodsFor(pathname: string): string {
     case '/computed_styles':
     case '/dom_subtree':
     case '/shutdown':
+    case '/__redesigner/exchange':
+    case '/__redesigner/revalidate':
       return 'POST'
     default:
       return ''
