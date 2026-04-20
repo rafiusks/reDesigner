@@ -257,9 +257,8 @@ describe('createExchangeRoute — successful exchange', () => {
     )
     expect(res.status).toBe(200)
     const body = JSON.parse(res.body) as { exp: number }
-    const iatSec = Math.floor(iatMs / 1000)
-    expect(body.exp).toBeGreaterThan(iatSec)
-    expect(body.exp - iatSec).toBeLessThanOrEqual(300)
+    expect(body.exp).toBeGreaterThan(iatMs)
+    expect(body.exp - iatMs).toBeLessThanOrEqual(300_000)
   })
 
   it('serverNonce is fresh-random per mint', async () => {

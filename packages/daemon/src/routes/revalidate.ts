@@ -273,7 +273,7 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     const iatSec = Math.floor(iatMs / 1000)
     const serverNonce = crypto.randomBytes(24).toString('base64url').replace(/=+$/, '')
     const newSessionToken = mintSessionToken(clientNonce, serverNonce, iatSec)
-    const expSec = iatSec + SESSION_TTL_SEC
+    const expMs = iatMs + SESSION_TTL_SEC * 1000
 
     // Rotate session: invalidate old token, activate new one.
     exchange.rotateSession(extId, newSessionToken)
@@ -286,7 +286,7 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     noStorePrivate(res)
     sendJson(res, 200, {
       sessionToken: newSessionToken,
-      exp: expSec,
+      exp: expMs,
       serverNonce,
     })
   }

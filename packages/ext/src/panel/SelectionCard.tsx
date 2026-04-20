@@ -37,7 +37,8 @@ export function SelectionCard(props: SelectionCardProps): JSX.Element | null {
     }
   }
 
-  const mcpSnippet = 'claude mcp add --transport stdio redesigner -- <path>/mcp.sh'
+  const mcpSnippet =
+    'claude mcp add --transport stdio redesigner -- node <repo>/packages/mcp/dist/cli.js'
 
   return (
     <div
