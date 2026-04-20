@@ -49,7 +49,7 @@ import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import { clearTrustedExtId, readTrustedExtId, writeTrustedExtId } from '../tofu.js'
 import { problem, readJsonBody, sendJson, sendProblem } from '../types.js'
-import { handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
+import { applyCorsHeaders, handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
 
 // All Zod schemas at module top-level - CLAUDE.md: in-handler z.object() is a v4 regression cliff.
 const BodySchema = ExchangeRequestSchema
@@ -109,12 +109,17 @@ export interface ExchangeRouteHandle {
   getBootstrapEpochId: () => string
 }
 
-function forbidUnknownExtension(res: ServerResponse, detail: string, reqId: string): void {
+function forbidUnknownExtension(
+  res: ServerResponse,
+  detail: string,
+  reqId: string,
+  req: IncomingMessage,
+): void {
   const p = problem(403, 'Forbidden', detail, reqId)
   const body = { ...p, apiErrorCode: 'unknown-extension' }
   res.statusCode = 403
   res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
-  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
+  applyCorsHeaders(res, req)
   res.end(JSON.stringify(body))
 }
 
@@ -287,7 +292,12 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     const sfs = req.headers['sec-fetch-site']
     const sfsVal = Array.isArray(sfs) ? sfs[0] : sfs
     if (sfsVal !== undefined && sfsVal !== 'none' && sfsVal !== 'cross-site') {
-      forbidUnknownExtension(res, `Sec-Fetch-Site must be none|cross-site, got ${sfsVal}`, reqId)
+      forbidUnknownExtension(
+        res,
+        `Sec-Fetch-Site must be none|cross-site, got ${sfsVal}`,
+        reqId,
+        req,
+      )
       return
     }
 
@@ -295,17 +305,22 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     const origin = req.headers.origin
     const originVal = Array.isArray(origin) ? origin[0] : origin
     if (typeof originVal !== 'string') {
-      forbidUnknownExtension(res, 'Origin header missing', reqId)
+      forbidUnknownExtension(res, 'Origin header missing', reqId, req)
       return
     }
     const match = ORIGIN_REGEX.exec(originVal)
     if (match === null) {
-      forbidUnknownExtension(res, 'Origin must be chrome-extension://<32-lowercase-letters>', reqId)
+      forbidUnknownExtension(
+        res,
+        'Origin must be chrome-extension://<32-lowercase-letters>',
+        reqId,
+        req,
+      )
       return
     }
     const extId = match[1]
     if (extId === undefined || !EXT_ID_REGEX.test(extId)) {
-      forbidUnknownExtension(res, 'malformed extension ID', reqId)
+      forbidUnknownExtension(res, 'malformed extension ID', reqId, req)
       return
     }
 
@@ -327,6 +342,7 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
       sendProblem(
         res,
         problem(429, 'TooManyRequests', 'failed-exchange rate limit exceeded', reqId),
+        req,
       )
       return
     }
@@ -338,14 +354,14 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     } catch (e) {
       const code = (e as Error).message === 'PayloadTooLarge' ? 'PayloadTooLarge' : 'InvalidJSON'
       const status = code === 'PayloadTooLarge' ? 413 : 400
-      sendProblem(res, problem(status, code, undefined, reqId))
+      sendProblem(res, problem(status, code, undefined, reqId), req)
       return
     }
 
     const parsed = BodySchema.safeParse(body)
     if (!parsed.success) {
       const detail = parsed.error.issues.map((i) => i.message).join('; ')
-      sendProblem(res, problem(400, 'InvalidRequest', detail, reqId))
+      sendProblem(res, problem(400, 'InvalidRequest', detail, reqId), req)
       return
     }
 
@@ -353,21 +369,21 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
 
     // Gate 4: bootstrapToken match (constant-time, via compareToken).
     if (!compareToken(providedBootstrap, bootstrapToken)) {
-      sendProblem(res, problem(401, 'Unauthorized', 'invalid bootstrap token', reqId))
+      sendProblem(res, problem(401, 'Unauthorized', 'invalid bootstrap token', reqId), req)
       return
     }
 
     // Gate 5: clientNonce one-shot within this bootstrap epoch.
     const nonceKey = `${bootstrapEpochId}:${clientNonce}`
     if (consumedNonces.has(nonceKey)) {
-      sendProblem(res, problem(401, 'Unauthorized', 'clientNonce already consumed', reqId))
+      sendProblem(res, problem(401, 'Unauthorized', 'clientNonce already consumed', reqId), req)
       return
     }
 
     // Gate 6: TOFU decision (uses pre-add bootWindowOrigins snapshot).
     const decision = evaluateTofu(extId)
     if (!decision.allow) {
-      forbidUnknownExtension(res, 'extension not trusted for this project', reqId)
+      forbidUnknownExtension(res, 'extension not trusted for this project', reqId, req)
       return
     }
     // Post-decision: only successful exchanges count toward "origins connected".

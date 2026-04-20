@@ -45,6 +45,7 @@ export async function readJsonBody(req: IncomingMessage, cap: number): Promise<u
   })
 }
 
+// Caller is responsible for Vary/ACAO via applyCorsHeaders or upstream gate.
 export function sendJson(
   res: ServerResponse,
   status: number,

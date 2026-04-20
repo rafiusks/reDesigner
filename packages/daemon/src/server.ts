@@ -85,7 +85,6 @@ export function createDaemonServer(opts: ServerOptions): {
           `Host must be one of localhost:${opts.port}, 127.0.0.1:${opts.port}, [::1]:${opts.port}; got ${host ?? ''}`,
           reqId,
         ),
-        undefined,
         req,
       )
       return
@@ -98,12 +97,7 @@ export function createDaemonServer(opts: ServerOptions): {
     try {
       url = new URL(req.url ?? '/', `http://${host}`)
     } catch {
-      sendProblem(
-        res,
-        problem(400, 'InvalidRequest', 'malformed request URL', reqId),
-        undefined,
-        req,
-      )
+      sendProblem(res, problem(400, 'InvalidRequest', 'malformed request URL', reqId), req)
       return
     }
     const { pathname } = url
@@ -125,13 +119,7 @@ export function createDaemonServer(opts: ServerOptions): {
         return
       }
       // Unknown path: 404 with Vary.
-      applyCorsHeaders(res, req)
-      sendProblem(
-        res,
-        problem(404, 'NotFound', `no route for OPTIONS ${pathname}`, reqId),
-        undefined,
-        req,
-      )
+      sendProblem(res, problem(404, 'NotFound', `no route for OPTIONS ${pathname}`, reqId), req)
       return
     }
 
@@ -145,7 +133,7 @@ export function createDaemonServer(opts: ServerOptions): {
         return
       }
       // 401 — empty body + WWW-Authenticate; problem.detail omitted to avoid info leak.
-      sendProblem(res, problem(401, 'Unauthorized', undefined, reqId), UNAUTHORIZED_HEADERS, req)
+      sendProblem(res, problem(401, 'Unauthorized', undefined, reqId), req, UNAUTHORIZED_HEADERS)
       return
     }
 
@@ -209,12 +197,7 @@ export function createDaemonServer(opts: ServerOptions): {
         const tabIdRaw = Number(tabsMatch[1])
         // Validate: positive integer within safe range (chrome tab IDs are always positive)
         if (!Number.isInteger(tabIdRaw) || tabIdRaw <= 0 || tabIdRaw > Number.MAX_SAFE_INTEGER) {
-          sendProblem(
-            res,
-            problem(400, 'InvalidRequest', 'tabId out of range', reqId),
-            undefined,
-            req,
-          )
+          sendProblem(res, problem(400, 'InvalidRequest', 'tabId out of range', reqId), req)
           return
         }
         if (method === 'PUT') {
@@ -272,17 +255,11 @@ export function createDaemonServer(opts: ServerOptions): {
         sendProblem(
           res,
           problem(405, 'MethodNotAllowed', `method ${method} not allowed for ${pathname}`, reqId),
-          undefined,
           req,
         )
         return
       }
-      sendProblem(
-        res,
-        problem(404, 'NotFound', `no route for ${method} ${pathname}`, reqId),
-        undefined,
-        req,
-      )
+      sendProblem(res, problem(404, 'NotFound', `no route for ${method} ${pathname}`, reqId), req)
     } catch (err: unknown) {
       // Handlers swallow their own readJsonBody errors already; anything reaching here is
       // genuinely unexpected. Log and 500.
@@ -291,7 +268,7 @@ export function createDaemonServer(opts: ServerOptions): {
         reqId,
       })
       if (!res.headersSent) {
-        sendProblem(res, problem(500, 'InternalError', undefined, reqId), undefined, req)
+        sendProblem(res, problem(500, 'InternalError', undefined, reqId), req)
       } else {
         res.destroy()
       }
@@ -341,7 +318,7 @@ function send429(
   bucket: TokenBucket,
 ): void {
   res.setHeader('Retry-After', String(bucket.retryAfterSec()))
-  sendProblem(res, problem(429, 'TooManyRequests', undefined, reqId), undefined, req)
+  sendProblem(res, problem(429, 'TooManyRequests', undefined, reqId), req)
 }
 
 function isKnownPath(pathname: string): boolean {

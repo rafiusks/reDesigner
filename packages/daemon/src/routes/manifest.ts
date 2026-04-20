@@ -12,7 +12,7 @@ export function handleManifestGet(
   const manifest = ctx.manifestWatcher.getCached()
 
   if (manifest === null) {
-    sendProblem(res, problem(503, 'NotReady', 'manifest not yet available', reqId), {
+    sendProblem(res, problem(503, 'NotReady', 'manifest not yet available', reqId), undefined, {
       'Retry-After': '1',
     })
     return

@@ -16,6 +16,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+// HTTP allowlist narrower than WS allowlist (events.ts ORIGIN_ALLOW) — Firefox/VS Code extensions are WS-only in v0.
 // Allowed CORS origin patterns.
 // chrome-extension://<32 lowercase letters> — extension
 // http://localhost:* and http://127.0.0.1:* — dev tooling
@@ -135,7 +136,6 @@ export function rejectCookieIfPresent(
   const cookie = req.headers.cookie
   if (cookie === undefined) return false
 
-  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
   applyCorsHeaders(res, req)
 
   const p = {

@@ -800,6 +800,68 @@ describe('Cookie header on /__redesigner/exchange → 400', () => {
   })
 })
 
+describe('Cookie header on /__redesigner/revalidate → 400', () => {
+  afterEach(() => cleanupTempDirs())
+
+  it('POST /__redesigner/revalidate with Cookie header returns 400', async () => {
+    const h = await mountExchangeHarness()
+    const res = await rawPost(
+      h.port,
+      '/__redesigner/revalidate',
+      {
+        Origin: ORIGIN_A,
+        'Sec-Fetch-Site': 'cross-site',
+        Cookie: 'session=abc123',
+      },
+      JSON.stringify({
+        clientNonce: crypto.randomBytes(16).toString('base64url'),
+        bootstrapToken: h.bootstrapToken.toString('utf8'),
+      }),
+    )
+    await h.close()
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /__redesigner/revalidate with Cookie header returns apiErrorCode invalid-params', async () => {
+    const h = await mountExchangeHarness()
+    const res = await rawPost(
+      h.port,
+      '/__redesigner/revalidate',
+      {
+        Origin: ORIGIN_A,
+        'Sec-Fetch-Site': 'cross-site',
+        Cookie: 'session=abc123',
+      },
+      JSON.stringify({
+        clientNonce: crypto.randomBytes(16).toString('base64url'),
+        bootstrapToken: h.bootstrapToken.toString('utf8'),
+      }),
+    )
+    await h.close()
+    const body = JSON.parse(res.body) as Record<string, unknown>
+    expect(body.apiErrorCode).toBe('invalid-params')
+  })
+
+  it('POST /__redesigner/revalidate with Cookie header returns Content-Type application/problem+json', async () => {
+    const h = await mountExchangeHarness()
+    const res = await rawPost(
+      h.port,
+      '/__redesigner/revalidate',
+      {
+        Origin: ORIGIN_A,
+        'Sec-Fetch-Site': 'cross-site',
+        Cookie: 'session=abc123',
+      },
+      JSON.stringify({
+        clientNonce: crypto.randomBytes(16).toString('base64url'),
+        bootstrapToken: h.bootstrapToken.toString('utf8'),
+      }),
+    )
+    await h.close()
+    expect(res.headers['content-type']).toBe('application/problem+json; charset=utf-8')
+  })
+})
+
 // ===========================================================================
 // 7. No response sets Access-Control-Allow-Credentials: true
 // ===========================================================================

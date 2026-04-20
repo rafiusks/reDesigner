@@ -46,7 +46,7 @@ import { compareToken, extractBearer } from '../auth.js'
 import type { Logger } from '../logger.js'
 import { createTokenBucket } from '../rateLimit.js'
 import { problem, readJsonBody, sendJson, sendProblem } from '../types.js'
-import { handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
+import { applyCorsHeaders, handlePreflight, noStorePrivate, rejectCookieIfPresent } from './cors.js'
 import type { ExchangeRouteHandle } from './exchange.js'
 
 // All Zod schemas at module top-level — CLAUDE.md: in-handler z.object() is a v4 regression cliff.
@@ -81,12 +81,17 @@ export interface RevalidateRouteHandle {
   handler: (req: IncomingMessage, res: ServerResponse, reqId: string) => Promise<void>
 }
 
-function forbidUnknownExtension(res: ServerResponse, detail: string, reqId: string): void {
+function forbidUnknownExtension(
+  res: ServerResponse,
+  detail: string,
+  reqId: string,
+  req: IncomingMessage,
+): void {
   const p = problem(403, 'Forbidden', detail, reqId)
   const body = { ...p, apiErrorCode: 'unknown-extension' }
   res.statusCode = 403
   res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
-  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
+  applyCorsHeaders(res, req)
   res.end(JSON.stringify(body))
 }
 
@@ -159,7 +164,7 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     const sfs = req.headers['sec-fetch-site']
     const sfsVal = Array.isArray(sfs) ? sfs[0] : sfs
     if (sfsVal !== undefined && sfsVal !== 'none' && sfsVal !== 'cross-site') {
-      forbidUnknownExtension(res, `Sec-Fetch-Site must be none|cross-site, got ${sfsVal}`, reqId)
+      forbidUnknownExtension(res, 'Sec-Fetch-Site must be none|cross-site', reqId, req)
       return
     }
 
@@ -167,17 +172,22 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     const origin = req.headers.origin
     const originVal = Array.isArray(origin) ? origin[0] : origin
     if (typeof originVal !== 'string') {
-      forbidUnknownExtension(res, 'Origin header missing', reqId)
+      forbidUnknownExtension(res, 'Origin header missing', reqId, req)
       return
     }
     const match = ORIGIN_REGEX.exec(originVal)
     if (match === null) {
-      forbidUnknownExtension(res, 'Origin must be chrome-extension://<32-lowercase-letters>', reqId)
+      forbidUnknownExtension(
+        res,
+        'Origin must be chrome-extension://<32-lowercase-letters>',
+        reqId,
+        req,
+      )
       return
     }
     const extId = match[1]
     if (extId === undefined || !EXT_ID_REGEX.test(extId)) {
-      forbidUnknownExtension(res, 'malformed extension ID', reqId)
+      forbidUnknownExtension(res, 'malformed extension ID', reqId, req)
       return
     }
 
@@ -188,12 +198,12 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     // there to rate-limit a stuck authenticated client's revalidate churn.
     const sessionBearer = extractBearer(req)
     if (sessionBearer === undefined) {
-      sendProblem(res, problem(401, 'Unauthorized', 'session token required', reqId))
+      sendProblem(res, problem(401, 'Unauthorized', 'session token required', reqId), req)
       return
     }
     if (!exchange.isSessionActive(extId, sessionBearer)) {
       logger.warn('[revalidate] invalid or expired session token', { extId })
-      sendProblem(res, problem(401, 'Unauthorized', 'session token invalid or expired', reqId))
+      sendProblem(res, problem(401, 'Unauthorized', 'session token invalid or expired', reqId), req)
       return
     }
 
@@ -201,7 +211,11 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     const bucket = getFailedBucket(extId)
     if (!bucket.tryConsume()) {
       res.setHeader('Retry-After', String(bucket.retryAfterSec()))
-      sendProblem(res, problem(429, 'TooManyRequests', 'revalidate rate limit exceeded', reqId))
+      sendProblem(
+        res,
+        problem(429, 'TooManyRequests', 'revalidate rate limit exceeded', reqId),
+        req,
+      )
       return
     }
 
@@ -212,14 +226,14 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     } catch (e) {
       const code = (e as Error).message === 'PayloadTooLarge' ? 'PayloadTooLarge' : 'InvalidJSON'
       const status = code === 'PayloadTooLarge' ? 413 : 400
-      sendProblem(res, problem(status, code, undefined, reqId))
+      sendProblem(res, problem(status, code, undefined, reqId), req)
       return
     }
 
     const parsed = BodySchema.safeParse(body)
     if (!parsed.success) {
       const detail = parsed.error.issues.map((i) => i.message).join('; ')
-      sendProblem(res, problem(400, 'InvalidRequest', detail, reqId))
+      sendProblem(res, problem(400, 'InvalidRequest', detail, reqId), req)
       return
     }
 
@@ -250,7 +264,7 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
 
     // Gate 5: clientNonce one-shot (shared with /exchange via exchange.consumeNonce).
     if (!exchange.consumeNonce(clientNonce)) {
-      sendProblem(res, problem(401, 'Unauthorized', 'clientNonce already consumed', reqId))
+      sendProblem(res, problem(401, 'Unauthorized', 'clientNonce already consumed', reqId), req)
       return
     }
 

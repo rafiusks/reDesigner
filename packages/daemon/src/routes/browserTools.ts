@@ -52,6 +52,7 @@ export async function handleBrowserToolPost(
         'per-ext concurrent in-flight cap reached; retry when a slot frees',
         reqId,
       ),
+      undefined,
       { 'Retry-After': '0' },
     )
     return
@@ -121,7 +122,7 @@ export async function handleBrowserToolPost(
       return
     }
     if (msg.includes('shutdown')) {
-      sendProblem(res, problem(503, 'Shutdown', 'daemon is shutting down', reqId), {
+      sendProblem(res, problem(503, 'Shutdown', 'daemon is shutting down', reqId), undefined, {
         Connection: 'close',
       })
       return
@@ -130,6 +131,7 @@ export async function handleBrowserToolPost(
       sendProblem(
         res,
         problem(503, 'ExtensionDisconnected', 'extension disconnected mid-flight', reqId),
+        undefined,
         { 'Retry-After': '2' },
       )
       return
@@ -138,6 +140,7 @@ export async function handleBrowserToolPost(
     sendProblem(
       res,
       problem(503, 'ExtensionDisconnected', 'extension disconnected mid-flight', reqId),
+      undefined,
       { 'Retry-After': '2' },
     )
     return

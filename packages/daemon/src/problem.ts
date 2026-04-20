@@ -41,8 +41,8 @@ export function problem(
 export function sendProblem(
   res: ServerResponse,
   p: ProblemResponse,
-  extraHeaders?: Record<string, string>,
   req?: IncomingMessage,
+  extraHeaders?: Record<string, string>,
 ): void {
   res.statusCode = p.status
   res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
