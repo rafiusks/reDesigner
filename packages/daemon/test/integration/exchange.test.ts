@@ -272,9 +272,10 @@ describe('exchange + revalidate integration', () => {
     expect(manifestRes.status).not.toBe(401)
   })
 
-  // Session token with missing/wrong Origin → 401 (Origin drives the extId
-  // lookup; without it the session-fallback short-circuits).
-  test('sessionToken with no Origin → 401', async () => {
+  // Session token with neither Origin nor X-Redesigner-Ext-Id → 401. Both
+  // headers are valid extId carriers; without either the session fallback
+  // has no way to identify the calling extension.
+  test('sessionToken with no extId source → 401', async () => {
     const clientNonce = crypto.randomUUID()
     const exchangeRes = await fetch(`${h.url}/__redesigner/exchange`, {
       method: 'POST',
@@ -293,7 +294,65 @@ describe('exchange + revalidate integration', () => {
       headers: {
         Authorization: `Bearer ${data.sessionToken}`,
         Host: `127.0.0.1:${h.port}`,
-        // Intentionally no Origin.
+        // Intentionally no Origin, no X-Redesigner-Ext-Id.
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(manifestRes.status).toBe(401)
+  })
+
+  // X-Redesigner-Ext-Id header works in lieu of Origin — matches real SW
+  // GET behavior where Chrome strips Origin on privileged extension fetches.
+  test('sessionToken with X-Redesigner-Ext-Id header (no Origin) → not 401', async () => {
+    const clientNonce = crypto.randomUUID()
+    const exchangeRes = await fetch(`${h.url}/__redesigner/exchange`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: CHROME_EXT_ORIGIN,
+        'Sec-Fetch-Site': 'cross-site',
+        Host: `127.0.0.1:${h.port}`,
+      },
+      body: JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    const data = ExchangeResponseSchema.parse(await exchangeRes.json())
+
+    // Ext ID extracted from the 32-letter suffix of CHROME_EXT_ORIGIN.
+    const extId = CHROME_EXT_ORIGIN.slice('chrome-extension://'.length)
+    const manifestRes = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: `Bearer ${data.sessionToken}`,
+        'X-Redesigner-Ext-Id': extId,
+        Host: `127.0.0.1:${h.port}`,
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(manifestRes.status).not.toBe(401)
+  })
+
+  // Mismatched X-Redesigner-Ext-Id → 401 (forged header can't impersonate
+  // a different extension's pinned session).
+  test('sessionToken with wrong X-Redesigner-Ext-Id → 401', async () => {
+    const clientNonce = crypto.randomUUID()
+    const exchangeRes = await fetch(`${h.url}/__redesigner/exchange`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: CHROME_EXT_ORIGIN,
+        'Sec-Fetch-Site': 'cross-site',
+        Host: `127.0.0.1:${h.port}`,
+      },
+      body: JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    const data = ExchangeResponseSchema.parse(await exchangeRes.json())
+
+    const manifestRes = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: `Bearer ${data.sessionToken}`,
+        'X-Redesigner-Ext-Id': 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
+        Host: `127.0.0.1:${h.port}`,
       },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })

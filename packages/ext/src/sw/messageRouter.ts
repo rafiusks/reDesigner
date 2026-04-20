@@ -112,8 +112,18 @@ export async function routeMessage(
     }
     try {
       const sessionToken = await ensureSession(tabId, hs, deps)
+      // Chrome strips the Origin header on extension-SW GETs with
+      // Authorization (privileged-context privacy mitigation — observed as
+      // `Sec-Fetch-Site: none`). The daemon's session-auth fallback can't
+      // parse extId out of Origin on these requests, so explicitly carry the
+      // extension ID in a custom header. isSessionActive(extId, token) still
+      // enforces match against the TOFU-pinned extId from /exchange, so a
+      // forged header can't impersonate a different extension.
       const res = await fetch(new URL('/manifest', hs.httpUrl).toString(), {
-        headers: { Authorization: `Bearer ${sessionToken}` },
+        headers: {
+          Authorization: `Bearer ${sessionToken}`,
+          'X-Redesigner-Ext-Id': chrome.runtime.id,
+        },
         credentials: 'omit',
         cache: 'no-store',
         signal: AbortSignal.timeout(5000),

@@ -173,21 +173,31 @@ export function createDaemonServer(opts: ServerOptions): {
     // 5–7. Auth: extract bearer, normalized constant-time compare against the
     //      long-lived daemon authToken. If that fails, fall back to treating
     //      the bearer as a session token minted via /__redesigner/exchange —
-    //      valid iff the Origin is a pinned chrome-extension:// and the token
-    //      is in the active-sessions map for that ext-ID. This is the path
-    //      the chrome extension uses: the ext never sees the daemon authToken,
-    //      so every REST call from the SW carries a session token instead.
+    //      valid iff the caller identifies a chrome-extension ID (via the
+    //      `Origin` header on requests that carry it, or via the custom
+    //      `X-Redesigner-Ext-Id` header on requests where Chrome strips
+    //      Origin — SW GETs with Authorization are classified as privileged
+    //      and omit Origin) AND the token matches the active session for
+    //      that ext-ID. The ext never sees the daemon authToken, so every
+    //      REST call from the SW carries a session token instead.
     //      Unauth bucket applies ONLY when both checks miss.
     const providedBearer = extractBearer(req)
     let authed = compareToken(providedBearer, opts.token)
     if (!authed && providedBearer !== undefined) {
+      let extId: string | null = null
       const originHeader = req.headers.origin
       const originVal = Array.isArray(originHeader) ? originHeader[0] : originHeader
       if (typeof originVal === 'string') {
         const match = CHROME_EXT_ORIGIN_REGEX.exec(originVal)
-        if (match?.[1]) {
-          authed = exchangeRoute.isSessionActive(match[1], providedBearer)
-        }
+        if (match?.[1]) extId = match[1]
+      }
+      if (extId === null) {
+        const raw = req.headers['x-redesigner-ext-id']
+        const val = Array.isArray(raw) ? raw[0] : raw
+        if (typeof val === 'string' && /^[a-z]{32}$/.test(val)) extId = val
+      }
+      if (extId !== null) {
+        authed = exchangeRoute.isSessionActive(extId, providedBearer)
       }
     }
 
