@@ -65,6 +65,133 @@ High-level steps:
 
 Choose path A if we want ergonomics back quickly and accept a framework dependency. Choose path B if we need total control of the build graph (e.g., a specific CSP or chunk topology CRXJS cannot express).
 
+## Codemod / sed scripts for common migration patterns
+
+The snippets below are intended to be run from the `packages/ext` directory after the structural moves above. They are not exhaustive — run `pnpm --filter @redesigner/ext build` after each batch and fix TypeScript errors manually.
+
+### A.1 — CRXJS import removal (WXT path)
+
+Remove `@crxjs/vite-plugin` imports and its `crx({ manifest })` plugin call from `vite.config.ts`:
+
+```sh
+# Remove the crxjs import line
+sed -i '' '/from "@crxjs\/vite-plugin"/d' vite.config.ts
+
+# Remove the crx() plugin invocation (single-line form)
+sed -i '' '/crx({/,/}),/d' vite.config.ts
+```
+
+If the `crx()` call spans multiple lines in a different style, run a Node codemod instead:
+
+```sh
+node --input-type=module <<'EOF'
+import { readFileSync, writeFileSync } from 'node:fs';
+let src = readFileSync('vite.config.ts', 'utf8');
+// Strip the crxjs import
+src = src.replace(/^import \{[^}]+\} from ['"]@crxjs\/vite-plugin['"];?\n/m, '');
+// Strip crx({...}) plugin block — handles multi-line
+src = src.replace(/\bcrx\s*\(\s*\{[\s\S]*?\}\s*\)\s*,?\n?/m, '');
+writeFileSync('vite.config.ts', src);
+console.log('Done');
+EOF
+```
+
+### A.2 — Entry path renames (WXT path)
+
+WXT expects entry files under `entrypoints/`. These `mv` commands correspond to the structural moves in step 3 of path A:
+
+```sh
+mkdir -p entrypoints/sidepanel
+mv src/sw/index.ts         entrypoints/background.ts
+mv src/content/index.ts    entrypoints/content.ts
+mv src/content/bootstrap.ts entrypoints/content-bootstrap.ts
+cp -r src/panel/index.html  entrypoints/sidepanel/index.html
+cp -r src/panel/main.tsx    entrypoints/sidepanel/main.tsx
+```
+
+After the move, wrap each entry's top-level export with WXT's `defineContentScript` or `defineBackground` helper. Quick sed for the content scripts:
+
+```sh
+# Prepend defineContentScript wrapper boilerplate — edit matches/runAt as needed
+node --input-type=module <<'EOF'
+import { readFileSync, writeFileSync } from 'node:fs';
+for (const [file, opts] of [
+  ['entrypoints/content.ts',           "{ matches: ['http://localhost/*'], runAt: 'document_end' }"],
+  ['entrypoints/content-bootstrap.ts', "{ matches: ['http://localhost/*'], runAt: 'document_start' }"],
+]) {
+  const src = readFileSync(file, 'utf8');
+  if (src.includes('defineContentScript')) continue; // already wrapped
+  writeFileSync(file, `export default defineContentScript(${opts}, () => {\n${src}\n});\n`);
+  console.log('Wrapped', file);
+}
+EOF
+```
+
+### A.3 — `package.json` script rewrites (WXT path)
+
+```sh
+node --input-type=module <<'EOF'
+import { readFileSync, writeFileSync } from 'node:fs';
+const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+pkg.scripts.dev   = 'wxt';
+pkg.scripts.build = 'wxt build';
+// Remove vite-specific scripts no longer needed
+delete pkg.scripts['build:watch'];
+writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+console.log('Done');
+EOF
+```
+
+### B.1 — `manifest.json` path rewrite after hand-rolled Vite build (path B)
+
+After `vite build` emits `dist/vite.manifest.json` (the asset manifest), rewrite `dist/manifest.json` entry paths. The script below is a starting template for `scripts/build-manifest.ts`:
+
+```ts
+// scripts/build-manifest.ts
+import { readFileSync, writeFileSync } from 'node:fs';
+
+const viteMf = JSON.parse(readFileSync('dist/vite.manifest.json', 'utf8')) as Record<string, { file: string }>;
+const mf     = JSON.parse(readFileSync('manifest.json', 'utf8'));
+
+const resolve = (src: string) => viteMf[src]?.file ?? src;
+
+mf.background.service_worker = resolve('src/sw/index.ts');
+mf.side_panel.default_path   = resolve('src/panel/index.html');
+mf.content_scripts[0].js     = mf.content_scripts[0].js.map(resolve);
+
+writeFileSync('dist/manifest.json', JSON.stringify(mf, null, 2));
+console.log('dist/manifest.json written');
+```
+
+Run it as a post-build step:
+
+```sh
+# In vite.config.ts closeBundle hook or package.json postbuild script:
+node --loader ts-node/esm scripts/build-manifest.ts
+```
+
+### B.2 — Sed patch to disable code-splitting for the SW entry (path B)
+
+MV3 service workers must be a single bundled file with no dynamic `import()`. Add this to the SW-specific Vite sub-config:
+
+```sh
+# Patch vite.config.ts to add inlineDynamicImports for the SW build
+sed -i '' \
+  '/rollupOptions:/a\        output: { inlineDynamicImports: true },' \
+  vite.config.sw.ts 2>/dev/null || echo "Apply manually to the SW-specific config"
+```
+
+This sed is fragile — for a multi-config setup, edit `vite.config.sw.ts` manually and add:
+
+```ts
+build: {
+  rollupOptions: {
+    input: 'src/sw/index.ts',
+    output: { inlineDynamicImports: true },
+  },
+},
+```
+
 ## `key` field rotation
 
 The `key` field in `manifest.json` is a base64 SPKI RSA-2048 public key. Chromium hashes it to compute the unpacked extension ID, so pinning a key keeps the dev ID stable across reloads — this matters because `externally_connectable` hosts and dev bookmarks index by ID.
