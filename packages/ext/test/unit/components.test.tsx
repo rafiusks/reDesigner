@@ -14,7 +14,12 @@ import { type Root, createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectionBadge } from '../../src/panel/ConnectionBadge'
 import { Debug } from '../../src/panel/Debug'
+// Side-effect imports: warm the module cache for the React.lazy() chunks
+// before the tests run. Without this the first Suspense resolution on a
+// slow CI runner can take >10 event-loop turns, producing flakes.
+import '../../src/panel/DebugDrawer'
 import { ErrorBanners } from '../../src/panel/ErrorBanners'
+import '../../src/panel/McpSetupChip'
 import { SelectionCard } from '../../src/panel/SelectionCard'
 import { ShortcutsFooter } from '../../src/panel/ShortcutsFooter'
 
