@@ -56,6 +56,14 @@ async function waitForHandoff(handoffPath: string): Promise<{
   )
 }
 
+// ANSI CSI escape sequences: ESC `[` … letter. Vite's banner wraps both
+// "Local:" (in a bold toggle) and the port number in colors, so the raw
+// byte stream on CI looks like:
+//   `\x1b[1mLocal\x1b[22m:   \x1b[36mhttp://localhost:\x1b[1m5173\x1b[22m/\x1b[39m`
+// FORCE_COLOR=0 isn't enough — vite 6+ ignores it. Strip CSI before matching.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is part of the spec
+const ANSI_CSI = /\u001b\[[0-9;]*[a-zA-Z]/g
+
 async function waitForViteReady(child: ChildProcess): Promise<string> {
   return new Promise((resolve, reject) => {
     let accumulated = ''
@@ -68,9 +76,10 @@ async function waitForViteReady(child: ChildProcess): Promise<string> {
       )
     }, VITE_READY_TIMEOUT_MS)
     const onData = (buf: Buffer): void => {
-      const s = buf.toString('utf8')
-      accumulated += s
-      const match = /Local:\s+(http:\/\/[^\s]+)/.exec(s)
+      const raw = buf.toString('utf8')
+      accumulated += raw
+      const clean = accumulated.match(ANSI_CSI) ? accumulated.replace(ANSI_CSI, '') : accumulated
+      const match = /Local:\s+(http:\/\/[^\s]+)/.exec(clean)
       if (match?.[1]) {
         clearTimeout(deadline)
         child.stdout?.off('data', onData)
@@ -102,7 +111,9 @@ export default async function globalSetup(): Promise<void> {
     cwd: PLAYGROUND_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
-    env: { ...process.env, FORCE_COLOR: '0' },
+    // Belt-and-suspenders — NO_COLOR is widely honored; FORCE_COLOR=0 is vite's
+    // own knob. Vite 6 still emits some ANSI regardless; we also strip CSI below.
+    env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
   })
   child.unref()
 
