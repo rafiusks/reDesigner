@@ -15,6 +15,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { CorsError } from '@redesigner/core/schemas'
 
 // HTTP allowlist narrower than WS allowlist (events.ts ORIGIN_ALLOW) — Firefox/VS Code extensions are WS-only in v0.
 // Allowed CORS origin patterns.
@@ -69,19 +70,13 @@ export function handlePreflight(
   const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader
 
   if (typeof origin !== 'string' || !ALLOWED_ORIGIN_RE.test(origin)) {
-    // Disallowed origin: 403 + problem body.
-    // Import lazily to avoid circular dependency (problem.ts imports cors.ts).
-    const p = {
-      type: 'https://redesigner.dev/errors/forbidden',
-      title: 'Forbidden',
-      status: 403,
-      code: 'Forbidden',
-      instance: `/req/${reqId}`,
-      detail: `Origin not allowed for CORS preflight: ${origin ?? '(none)'}`,
-    }
+    // Disallowed origin: 403 + machine-parseable CorsError body.
+    const reason: CorsError['reason'] =
+      typeof origin !== 'string' ? 'missing-origin' : 'malformed-origin'
+    const body: CorsError = { error: 'cors', reason }
     res.statusCode = 403
-    res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
-    res.end(JSON.stringify(p))
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify(body))
     return
   }
 

@@ -42,7 +42,7 @@
 
 import crypto from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { ExchangeRequestSchema } from '@redesigner/core/schemas'
+import { type CorsError, ExchangeRequestSchema } from '@redesigner/core/schemas'
 import { compareToken } from '../auth.js'
 import { resolveTrustedExtIdPath } from '../handoff.js'
 import type { Logger } from '../logger.js'
@@ -124,6 +124,25 @@ function forbidUnknownExtension(
   res.statusCode = 403
   res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
   applyCorsHeaders(res, req)
+  res.end(JSON.stringify(body))
+}
+
+/** Reject with 403 + CorsError body when the Origin header is absent. */
+function rejectMissingOrigin(res: ServerResponse): void {
+  const body: CorsError = { error: 'cors', reason: 'missing-origin' }
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
+  res.statusCode = 403
+  res.setHeader('Content-Type', 'application/json')
+  res.end(JSON.stringify(body))
+}
+
+/** Reject with 403 + CorsError body when the Origin is present but not a valid chrome-extension://[a-p]{32} or localhost. */
+function rejectMalformedOrigin(res: ServerResponse, req: IncomingMessage): void {
+  const body: CorsError = { error: 'cors', reason: 'malformed-origin' }
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
+  applyCorsHeaders(res, req)
+  res.statusCode = 403
+  res.setHeader('Content-Type', 'application/json')
   res.end(JSON.stringify(body))
 }
 
@@ -309,22 +328,17 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     const origin = req.headers.origin
     const originVal = Array.isArray(origin) ? origin[0] : origin
     if (typeof originVal !== 'string') {
-      forbidUnknownExtension(res, 'Origin header missing', reqId, req)
+      rejectMissingOrigin(res)
       return
     }
     const match = ORIGIN_REGEX.exec(originVal)
     if (match === null) {
-      forbidUnknownExtension(
-        res,
-        'Origin must be chrome-extension://<32-lowercase-letters>',
-        reqId,
-        req,
-      )
+      rejectMalformedOrigin(res, req)
       return
     }
     const extId = match[1]
     if (extId === undefined || !EXT_ID_REGEX.test(extId)) {
-      forbidUnknownExtension(res, 'malformed extension ID', reqId, req)
+      rejectMalformedOrigin(res, req)
       return
     }
 

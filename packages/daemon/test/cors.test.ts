@@ -482,10 +482,11 @@ describe('Problem body Content-Type includes charset=utf-8', () => {
     expect(res.headers['content-type']).toBe(PROBLEM_CT)
   })
 
-  it('401 unauthorized has correct Content-Type', async () => {
+  it('401 unauthorized has correct Content-Type (application/json for AuthError body)', async () => {
     const res = await rawRequest(h.port, 'GET', '/selection', 'wrong-token')
     expect(res.status).toBe(401)
-    expect(res.headers['content-type']).toBe(PROBLEM_CT)
+    // AuthError bodies are emitted via sendJson → application/json (not problem+json)
+    expect(res.headers['content-type']).toBe('application/json')
   })
 
   it('404 not found has correct Content-Type', async () => {
@@ -964,13 +965,14 @@ describe('OPTIONS preflight — correct Access-Control-Allow-Methods per route',
     expect(res.headers['access-control-allow-headers']).toBe('authorization, content-type')
   })
 
-  it('OPTIONS with disallowed Origin → 403 + problem body', async () => {
+  it('OPTIONS with disallowed Origin → 403 + CorsError body', async () => {
     const res = await rawOptions(h.port, '/health', h.bearer, {
       Origin: 'https://evil.example.com',
     })
     expect(res.status).toBe(403)
     const body = JSON.parse(res.body) as Record<string, unknown>
-    expect(body.status).toBe(403)
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('malformed-origin')
   })
 
   it('OPTIONS unknown route → 404', async () => {

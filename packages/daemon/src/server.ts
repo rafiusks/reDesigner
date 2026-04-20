@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
+import type { AuthError } from '@redesigner/core/schemas'
 import { UNAUTHORIZED_HEADERS, compareToken, extractBearer } from './auth.js'
 import { hostAllow } from './hostAllow.js'
 import { problem, sendProblem } from './problem.js'
@@ -183,6 +184,9 @@ export function createDaemonServer(opts: ServerOptions): {
     //      Unauth bucket applies ONLY when both checks miss.
     const providedBearer = extractBearer(req)
     let authed = compareToken(providedBearer, opts.token)
+    // Track whether a session-auth attempt was made with a recognized extId.
+    // Used to emit the correct 401 reason: extid-mismatch vs token-unknown.
+    let extIdFound = false
     if (!authed && providedBearer !== undefined) {
       let extId: string | null = null
       const originHeader = req.headers.origin
@@ -197,6 +201,7 @@ export function createDaemonServer(opts: ServerOptions): {
         if (typeof val === 'string' && /^[a-p]{32}$/.test(val)) extId = val
       }
       if (extId !== null) {
+        extIdFound = true
         authed = exchangeRoute.isSessionActive(extId, providedBearer)
       }
     }
@@ -206,8 +211,15 @@ export function createDaemonServer(opts: ServerOptions): {
         send429(res, req, reqId, unauthBucket)
         return
       }
-      // 401 — empty body + WWW-Authenticate; problem.detail omitted to avoid info leak.
-      sendProblem(res, problem(401, 'Unauthorized', undefined, reqId), req, UNAUTHORIZED_HEADERS)
+      // 401 — machine-parseable AuthError body + WWW-Authenticate header.
+      // reason: extid-mismatch when a bearer+extId pair was tried but the session
+      //         didn't match; token-unknown for all other miss paths (no bearer,
+      //         bearer without extId, bearer that didn't match root token).
+      const reason: AuthError['reason'] = extIdFound ? 'extid-mismatch' : 'token-unknown'
+      const authErrorBody: AuthError = { error: 'auth', reason }
+      applyCorsHeaders(res, req)
+      res.setHeader('WWW-Authenticate', UNAUTHORIZED_HEADERS['WWW-Authenticate'])
+      sendJson(res, 401, authErrorBody)
       return
     }
 

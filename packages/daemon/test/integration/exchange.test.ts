@@ -17,6 +17,9 @@
  *   7. POST /__redesigner/revalidate after successful exchange → new sessionToken
  *   8. GET /__redesigner/exchange without Bearer → 401 (unauth path; 401 is stricter than 405)
  *   9. GET /__redesigner/exchange with valid Bearer → 405 Allow: POST (authed but wrong method)
+ *  10. Bogus bearer on authenticated route → 401 body has error=auth, reason=token-unknown
+ *  11. 403 body on malformed-origin exchange request → error=cors, reason=malformed-origin
+ *  12. Missing Origin on exchange request → 403 body error=cors, reason=missing-origin
  */
 
 import crypto from 'node:crypto'
@@ -623,5 +626,66 @@ describe('exchange + revalidate integration', () => {
     expect(res.status).toBe(405)
     const allow = res.headers.get('allow') ?? ''
     expect(allow).toContain('POST')
+  })
+
+  // -------------------------------------------------------------------------
+  // 10. Bogus bearer on authenticated route → 401 body error=auth, reason=token-unknown
+  //     (no valid extId source means the session fallback never runs)
+  // -------------------------------------------------------------------------
+  test('401 body has error=auth, reason=token-unknown for bogus bearer', async () => {
+    const res = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: 'Bearer bogus-token-12345',
+        Host: `127.0.0.1:${h.port}`,
+        Connection: 'close',
+        // No Origin, no X-Redesigner-Ext-Id — no extId source available.
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.error).toBe('auth')
+    expect(body.reason).toBe('token-unknown')
+  })
+
+  // -------------------------------------------------------------------------
+  // 11. 403 body on malformed-origin exchange request → error=cors, reason=malformed-origin
+  //     (q-z characters in ext ID fail [a-p]{32} regex)
+  // -------------------------------------------------------------------------
+  test('403 body has error=cors, reason=malformed-origin for q-z Origin', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/exchange',
+      {
+        Origin: 'chrome-extension://abcdefghijklmnopqrstuvwxyz123456',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('malformed-origin')
+  })
+
+  // -------------------------------------------------------------------------
+  // 12. Missing Origin on exchange request → 403 body error=cors, reason=missing-origin
+  // -------------------------------------------------------------------------
+  test('403 body has error=cors, reason=missing-origin for missing Origin header', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/exchange',
+      {
+        // Deliberately no Origin header
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('missing-origin')
   })
 })
