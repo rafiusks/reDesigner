@@ -24,6 +24,7 @@
  * depends on. A click-through UI assertion is tracked as post-v0 follow-up.
  */
 
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,6 +33,11 @@ import { chromium, expect, test } from '@playwright/test'
 import { requireFullHarness } from './_harness'
 
 const EXT_DIST = fileURLToPath(new URL('../../../dist', import.meta.url))
+
+// Canonical 32-lowercase-letter test extension ID that matches the daemon's
+// CHROME_EXT_ORIGIN_REGEX (=/^chrome-extension:\/\/([a-z]{32})$/). Any shorter
+// or differently-cased value fails the Origin gate with a 403.
+const TEST_EXT_ORIGIN = 'chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef'
 
 test('@nightly exchange→sessionToken→manifest and selection echo', async () => {
   if (!requireFullHarness()) return
@@ -66,16 +72,18 @@ test('@nightly exchange→sessionToken→manifest and selection echo', async () 
     expect(bootstrapToken, 'x-redesigner-bootstrap header present').toBeTruthy()
 
     // Step 2: POST /__redesigner/exchange with the bootstrapToken to mint a
-    // session token. This is the path the ext SW walks on every page navigation.
-    const exchangeResp = await fetch(`${devUrl as string}/__redesigner/exchange`, {
+    // session token. This hits the DAEMON (not the vite middleware) because
+    // the carve-out is mounted in server.ts:handle. Matches the path the
+    // real SW walks on every page navigation: Origin + Sec-Fetch-Site +
+    // {clientNonce, bootstrapToken} body are all required by the gate.
+    const exchangeResp = await fetch(`${daemonUrl as string}/__redesigner/exchange`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // chrome-extension:// Origin is what the real SW sends. Node fetch
-        // does not restrict Origin, so we can set it directly here.
-        Origin: 'chrome-extension://testextensionid',
+        Origin: TEST_EXT_ORIGIN,
+        'Sec-Fetch-Site': 'cross-site',
       },
-      body: JSON.stringify({ bootstrapToken }),
+      body: JSON.stringify({ clientNonce: randomUUID(), bootstrapToken }),
     })
     expect(exchangeResp.status, 'POST /exchange → 200').toBe(200)
     const exchangeBody = (await exchangeResp.json()) as { sessionToken?: string }
@@ -83,9 +91,14 @@ test('@nightly exchange→sessionToken→manifest and selection echo', async () 
     const sessionToken = exchangeBody.sessionToken as string
 
     // Step 3: GET /manifest on the daemon using the session bearer. This is the
-    // first authenticated daemon call the ext SW makes after exchange.
+    // first authenticated daemon call the ext SW makes after exchange. The
+    // Origin header is load-bearing — server.ts's session-token auth fallback
+    // parses extId out of it and looks up the active session.
     const manifestResp = await fetch(`${daemonUrl as string}/manifest`, {
-      headers: { Authorization: `Bearer ${sessionToken}` },
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+        Origin: TEST_EXT_ORIGIN,
+      },
     })
     expect(manifestResp.status, 'GET /manifest with session bearer → 200').toBe(200)
     const manifest = (await manifestResp.json()) as { components?: unknown[] }
@@ -115,7 +128,7 @@ test('@nightly exchange→sessionToken→manifest and selection echo', async () 
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${sessionToken}`,
-        Origin: 'chrome-extension://testextensionid',
+        Origin: TEST_EXT_ORIGIN,
       },
       body: JSON.stringify(selectionBody),
     })
@@ -124,7 +137,10 @@ test('@nightly exchange→sessionToken→manifest and selection echo', async () 
     expect(putBody, 'PUT response has selectionSeq').toHaveProperty('selectionSeq')
 
     const getSelResp = await fetch(`${daemonUrl as string}/selection`, {
-      headers: { Authorization: `Bearer ${sessionToken}` },
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+        Origin: TEST_EXT_ORIGIN,
+      },
     })
     expect(getSelResp.status, 'GET /selection with session bearer → 200').toBe(200)
     const getSelBody = (await getSelResp.json()) as { current: unknown }
