@@ -1,16 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * Integration tests for packages/ext/src/content/handshake.ts and
- * packages/ext/src/content/index.ts.
- *
- * Covers spec §4.1 steps 2-4:
- *  - Fetch /__redesigner/handshake.json with credentials:'omit'
- *  - X-Redesigner-Bootstrap header preferred; body.bootstrapToken as fallback
- *  - MutationObserver on document.head catches late meta injection
- *  - beforeunload disconnects the observer
- *  - meta-in-body case logs dormantReason
- *  - Forwards {wsUrl,httpUrl,bootstrapToken,editor,clientId} to SW via runtime.sendMessage
- */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchHandshake, readMetaHandshake } from '../../src/content/handshake.js'
@@ -161,7 +149,12 @@ describe('content/index integration', () => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Tear down observer + beforeunload listener to prevent cross-test pollution.
+    const mod = await import('../../src/content/index.js')
+    if ('stopContentScript' in mod && typeof mod.stopContentScript === 'function') {
+      mod.stopContentScript()
+    }
     globalThis.chrome = originalChrome
     vi.restoreAllMocks()
     // Clean up any injected metas
@@ -169,8 +162,6 @@ describe('content/index integration', () => {
   })
 
   async function loadContentScript(): Promise<void> {
-    // Fresh import each test via dynamic import with cache-busting is tricky in vitest.
-    // Instead, we import and call runContentScript() directly.
     const mod = await import('../../src/content/index.js')
     if ('runContentScript' in mod && typeof mod.runContentScript === 'function') {
       await mod.runContentScript()
@@ -238,7 +229,7 @@ describe('content/index integration', () => {
     await loadContentScript()
 
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('meta in <body>'),
+      expect.stringContaining('meta element found in <body>'),
       expect.objectContaining({ dormantReason: 'meta-in-body' }),
     )
   })
@@ -269,10 +260,10 @@ describe('content/index integration', () => {
 
     await loadContentScript()
 
-    // Fire beforeunload
+    // Fire beforeunload — stopContentScript calls disconnect.
     window.dispatchEvent(new Event('beforeunload'))
 
-    expect(disconnectSpy).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(disconnectSpy).toHaveBeenCalledOnce())
 
     globalThis.MutationObserver = OriginalMutationObserver
   })
@@ -301,12 +292,11 @@ describe('content/index integration', () => {
     })
     document.head.appendChild(meta)
 
-    // MutationObserver callbacks are microtask-scheduled; wait a tick
-    await new Promise((r) => setTimeout(r, 0))
-
-    const effects = chromeMock._recorder.snapshot()
-    const registerEffect = effects.find((e) => e.type === 'runtime.sendMessage')
-    expect(registerEffect).toBeDefined()
+    // Wait deterministically for the MutationObserver callback to fire and register.
+    await vi.waitFor(() => {
+      const effects = chromeMock._recorder.snapshot()
+      expect(effects.find((e) => e.type === 'runtime.sendMessage')).toBeDefined()
+    })
   })
 
   it('(8) iframe no-op: no fetch and no sendMessage when window.top !== window', async () => {

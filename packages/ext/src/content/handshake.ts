@@ -1,11 +1,3 @@
-/**
- * Handshake utilities for the content script (spec §4.1 steps 2-3).
- *
- * - readMetaHandshake: reads <meta name="redesigner-daemon"> content.
- * - fetchHandshake: fetches /__redesigner/handshake.json with credentials:'omit';
- *   prefers X-Redesigner-Bootstrap response header over body.bootstrapToken.
- */
-
 import { type Editor, EditorSchema } from '../shared/editors.js'
 
 export interface HandshakeResult {
@@ -15,52 +7,38 @@ export interface HandshakeResult {
   editor: Editor
 }
 
-/**
- * Reads <meta name="redesigner-daemon"> from the given document and returns
- * a partial HandshakeResult. Returns null if the tag is absent or content is
- * unparseable JSON.
- *
- * Does not validate URLs — the caller (fetchHandshake / index.ts) must decide
- * what to do with partial data.
- */
-export function readMetaHandshake(doc: Document = document): Partial<HandshakeResult> | null {
-  const meta = doc.querySelector<HTMLMetaElement>('meta[name="redesigner-daemon"]')
-  if (!meta) return null
-
+// Shared JSON parse helper — used by both readMetaHandshake and content/index.ts.
+export function parseHandshakeJson(json: string): Partial<HandshakeResult> | null {
   let parsed: unknown
   try {
-    parsed = JSON.parse(meta.content)
+    parsed = JSON.parse(json)
   } catch {
     return null
   }
-
   if (typeof parsed !== 'object' || parsed === null) return null
-
   const obj = parsed as Record<string, unknown>
-
   const result: Partial<HandshakeResult> = {}
-
   if (typeof obj.wsUrl === 'string') result.wsUrl = obj.wsUrl
   if (typeof obj.httpUrl === 'string') result.httpUrl = obj.httpUrl
   if (typeof obj.bootstrapToken === 'string') result.bootstrapToken = obj.bootstrapToken
-
   const editorParse = EditorSchema.safeParse(obj.editor)
   if (editorParse.success) result.editor = editorParse.data
-
   return result
 }
 
-/**
- * Fetches /__redesigner/handshake.json from the given httpUrl base.
- * Uses credentials:'omit' and cache:'no-store' per spec §4.1 step 2.
- *
- * Token priority:
- *   - bootstrapToken: X-Redesigner-Bootstrap header (preferred) → body.bootstrapToken (fallback).
- *   - wsUrl, httpUrl, editor: always from the response body.
- *
- * Returns null on network error, non-2xx, or schema-invalid response.
- * Never throws — CS must not crash the host page.
- */
+// Reads <meta name="redesigner-daemon"> and returns a partial HandshakeResult.
+// Returns null if the tag is absent or content is unparseable JSON.
+export function readMetaHandshake(doc: Document = document): Partial<HandshakeResult> | null {
+  const meta = doc.querySelector<HTMLMetaElement>('meta[name="redesigner-daemon"]')
+  if (!meta) return null
+  return parseHandshakeJson(meta.content)
+}
+
+// Fetches /__redesigner/handshake.json from the given httpUrl base.
+// Uses credentials:'omit' and cache:'no-store' per spec §4.1 step 2.
+// Token priority: X-Redesigner-Bootstrap header (preferred) → body.bootstrapToken (fallback).
+// Returns null on network error, non-2xx, or schema-invalid response.
+// Never throws — CS must not crash the host page.
 export async function fetchHandshake(httpUrl: string): Promise<HandshakeResult | null> {
   const url = new URL('/__redesigner/handshake.json', httpUrl).toString()
 
@@ -102,11 +80,9 @@ export async function fetchHandshake(httpUrl: string): Promise<HandshakeResult |
     return null
   }
 
-  // wsUrl and httpUrl from body.
   const wsUrl = typeof obj.wsUrl === 'string' ? obj.wsUrl : ''
   const httpUrlVal = typeof obj.httpUrl === 'string' ? obj.httpUrl : ''
 
-  // Validate URLs.
   try {
     new URL(wsUrl)
     new URL(httpUrlVal)
@@ -115,7 +91,6 @@ export async function fetchHandshake(httpUrl: string): Promise<HandshakeResult |
     return null
   }
 
-  // editor from body.
   const editorParse = EditorSchema.safeParse(obj.editor)
   if (!editorParse.success) {
     console.warn('[redesigner] fetchHandshake: invalid editor in body', obj.editor)
