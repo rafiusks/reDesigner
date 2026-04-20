@@ -5,6 +5,34 @@
 
 import type { SideEffectRecorder } from './recorder.js'
 
+/**
+ * Very small subset of Chrome's URL match-pattern grammar. Supports:
+ *   - `<scheme>://<host>/*`  → scheme + host (port-agnostic) + any path
+ *   - `<scheme>://<host>/<path>*` → scheme + host (port-agnostic) + path prefix
+ * Does not support `<all_urls>`, `*://` scheme wildcards, or `*.host` host
+ * wildcards — add if callers need them.
+ */
+function matchesChromePattern(pattern: string, url: string | undefined): boolean {
+  if (url === undefined || url === '') return false
+  const m = pattern.match(/^([a-z-]+):\/\/([^/]+)(\/.*)$/)
+  if (!m) return false
+  const [, pScheme, pHost, pPath] = m
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return false
+  }
+  if (`${pScheme}:` !== u.protocol) return false
+  if (pHost !== u.hostname) return false
+  if (pPath === '/*') return true
+  if (pPath?.endsWith('*')) {
+    const prefix = pPath.slice(0, -1)
+    return u.pathname.startsWith(prefix)
+  }
+  return pPath === u.pathname
+}
+
 export function makeTabsMock(recorder: SideEffectRecorder) {
   const _tabs: Map<number, chrome.tabs.Tab> = new Map()
   let _nextId = 1
@@ -41,12 +69,20 @@ export function makeTabsMock(recorder: SideEffectRecorder) {
   return {
     query(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]> {
       recorder.record({ type: 'tabs.query', args: queryInfo })
+      const patterns =
+        queryInfo.url === undefined
+          ? null
+          : Array.isArray(queryInfo.url)
+            ? (queryInfo.url as string[])
+            : [queryInfo.url as string]
       const results = [..._tabs.values()].filter((tab) => {
         if (queryInfo.active !== undefined && tab.active !== queryInfo.active) return false
         if (queryInfo.windowId !== undefined && tab.windowId !== queryInfo.windowId) return false
-        if (queryInfo.url !== undefined) {
-          const pattern = queryInfo.url as string
-          if (!tab.url?.includes(pattern.replace(/\*/g, ''))) return false
+        if (patterns !== null) {
+          // Minimal Chrome match-pattern support for `scheme://host/*` (host
+          // matched host-only, ignoring port; path wildcard matches anything).
+          const matched = patterns.some((p) => matchesChromePattern(p, tab.url))
+          if (!matched) return false
         }
         return true
       })
