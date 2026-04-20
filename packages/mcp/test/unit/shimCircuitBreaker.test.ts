@@ -101,7 +101,11 @@ function stub200(): ReturnType<typeof vi.fn> {
 
 function setupFs(instanceId = 'inst-A'): void {
   vi.spyOn(fs, 'lstatSync').mockReturnValue(fakeStat())
-  vi.spyOn(fs, 'readFileSync').mockReturnValue(fakeHandoffJson(instanceId) as unknown as Buffer)
+  // readFileSync overloads resolve to Buffer-returning here; the shim calls
+  // toString('utf8') so string-in-Buffer clothing round-trips fine.
+  vi.spyOn(fs, 'readFileSync').mockReturnValue(
+    fakeHandoffJson(instanceId) as unknown as ReturnType<typeof fs.readFileSync>,
+  )
 }
 
 /** Run N getCurrentSelection() calls with STEP_MS fake-time spacing. */

@@ -279,7 +279,7 @@ describe('ManifestWatcher — idempotent same-content no-op', () => {
 
 // We use vi.hoisted to share mutable state between the mock factory and tests.
 const singleFlightState = vi.hoisted(() => ({
-  resolveFirst: null as ((value: undefined) => void) | null,
+  resolveFirst: null as (() => void) | null,
   callCount: 0,
   blocked: false,
 }))
@@ -480,11 +480,11 @@ describe('ManifestWatcher — contentHash recomputed from raw bytes', () => {
     // Sanity: expectedHash must differ from the fakeHash we put in the file
     expect(expectedHash).not.toBe(fakeHash)
 
-    let received: { contentHash?: string } | null = null
+    let receivedHash: string | null = null
     const watcher = new ManifestWatcher(
       manifestPath,
       (m) => {
-        received = m as { contentHash?: string }
+        receivedHash = (m as { contentHash?: string }).contentHash ?? null
       },
       fs.promises.readFile,
       fs.promises.stat,
@@ -494,10 +494,9 @@ describe('ManifestWatcher — contentHash recomputed from raw bytes', () => {
     await watcher.start()
 
     // onValidated should have been called with the recomputed hash
-    expect(received).not.toBeNull()
-    expect(received?.contentHash).toBe(expectedHash)
+    expect(receivedHash).toBe(expectedHash)
     // Must NOT be the placeholder value that was written to disk
-    expect(received?.contentHash).not.toBe(fakeHash)
+    expect(receivedHash).not.toBe(fakeHash)
 
     // getCached() also returns recomputed hash
     expect(watcher.getCached()?.contentHash).toBe(expectedHash)
