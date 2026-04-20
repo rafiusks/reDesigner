@@ -24,7 +24,7 @@ This document covers what the reDesigner Chrome extension actively defends, what
 | Asset | Location | Trust zone |
 |---|---|---|
 | Bootstrap session token | Daemon HTTP response header (`X-ReDesigner-Token`) + injected meta tag in `index.html` | Daemon origin; kernel boundary at localhost |
-| WebSocket subprotocol bearer | `Sec-WebSocket-Protocol: redesigner-<token>` header on upgrade | Wire between extension and daemon |
+| WebSocket subprotocol bearer | `Sec-WebSocket-Protocol: redesigner-v1, base64url.bearer.authorization.redesigner.dev.<token>` header on upgrade | Wire between extension and daemon |
 | Selection payload | content script → SW → panel via `chrome.runtime.sendMessage` | Extension process boundary |
 | Manifest cache | `chrome.storage.session` in TRUSTED_CONTEXTS | Extension storage; isolated from page |
 | Extension ID | Derived from `manifest.json` `key` field; stable across unpacked reloads | Chrome profile |
