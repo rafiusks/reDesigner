@@ -45,8 +45,13 @@ test('@nightly handshake completes; daemon /selection reachable with SW-minted b
   expect(daemonToken, 'PW_DAEMON_TOKEN from globalSetup').toBeTruthy()
 
   const userDataDir = await mkdtemp(join(tmpdir(), 'redesigner-pick-'))
+  // Chromium 120+ supports MV3 extensions in new-headless mode. Legacy headed
+  // mode would require an X server (not present on GHA ubuntu-24.04 runners).
+  // Playwright maps `headless: true` to --headless=new when chromium is recent
+  // enough, which is the case for the pinned browsers installed by
+  // `playwright install --with-deps chromium` in nightly.yml.
   const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false,
+    headless: true,
     args: [
       `--disable-extensions-except=${EXT_DIST}`,
       `--load-extension=${EXT_DIST}`,
