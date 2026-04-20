@@ -11,8 +11,8 @@
     "dev": "vite",
     "test": "vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
-    "test:e2e:smoke": "playwright test --project=@smoke",
-    "test:e2e:nightly": "playwright test --project=@nightly",
+    "test:e2e:smoke": "pnpm run build && playwright test --project=@smoke",
+    "test:e2e:nightly": "pnpm run build && playwright test --project=@nightly",
     "typecheck": "tsc --noEmit",
     "lint": "biome check ."
   },

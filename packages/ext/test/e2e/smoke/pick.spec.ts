@@ -1,3 +1,18 @@
+// SKELETON — intentionally deferred.
+//
+// This is a v0 smoke placeholder. The full plan calls for a complete
+// arm → pick → daemon-PUT /tabs/:tabId/selection flow, which requires a
+// running daemon stub + vite dev server + built extension dist wired up end
+// to end in CI. That harness is not yet in place.
+//
+// Until it is, this test only asserts that the extension's service worker
+// registers after loading the MV3 bundle — a single smoke signal that the
+// ext build is not broken at the manifest/SW level. The fuller assertions
+// (panel arm button, selection commit, daemon PUT observed) are deferred to
+// the follow-up task that wires the daemon+vite+ext harness together.
+//
+// Do not add `throw new Error(...)` here; a passing one-line smoke signal
+// is the intended behavior during this skeleton phase.
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
