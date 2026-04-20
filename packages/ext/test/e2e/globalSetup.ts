@@ -58,13 +58,18 @@ async function waitForHandoff(handoffPath: string): Promise<{
 
 async function waitForViteReady(child: ChildProcess): Promise<string> {
   return new Promise((resolve, reject) => {
-    const deadline = setTimeout(
-      () =>
-        reject(new Error(`harness: vite did not emit Local URL within ${VITE_READY_TIMEOUT_MS}ms`)),
-      VITE_READY_TIMEOUT_MS,
-    )
+    let accumulated = ''
+    const deadline = setTimeout(() => {
+      reject(
+        new Error(
+          `harness: vite did not emit Local URL within ${VITE_READY_TIMEOUT_MS}ms. ` +
+            `Captured output (${accumulated.length} bytes): ${JSON.stringify(accumulated.slice(-500))}`,
+        ),
+      )
+    }, VITE_READY_TIMEOUT_MS)
     const onData = (buf: Buffer): void => {
       const s = buf.toString('utf8')
+      accumulated += s
       const match = /Local:\s+(http:\/\/[^\s]+)/.exec(s)
       if (match?.[1]) {
         clearTimeout(deadline)
@@ -89,7 +94,11 @@ export default async function globalSetup(): Promise<void> {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
   }
 
-  const child = spawn('pnpm', ['exec', 'vite', '--port', '0'], {
+  // Spawn the vite binary directly rather than via `pnpm exec` so the child
+  // stdio is a plain pipe (pnpm wraps stdio and on some CI runners buffers
+  // or swallows the "Local:" line).
+  const viteBin = path.join(PLAYGROUND_DIR, 'node_modules', '.bin', 'vite')
+  const child = spawn(viteBin, ['--port', '0'], {
     cwd: PLAYGROUND_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
@@ -97,8 +106,16 @@ export default async function globalSetup(): Promise<void> {
   })
   child.unref()
 
+  // Tee all child output to stderr so CI logs capture the startup sequence
+  // (vite banner, daemon fork errors, handshake middleware warnings, etc.).
+  child.stdout?.on('data', (buf: Buffer) => {
+    process.stderr.write(`[harness:vite:stdout] ${buf.toString('utf8')}`)
+  })
   child.stderr?.on('data', (buf: Buffer) => {
-    process.stderr.write(`[harness:vite] ${buf.toString('utf8')}`)
+    process.stderr.write(`[harness:vite:stderr] ${buf.toString('utf8')}`)
+  })
+  child.on('exit', (code, sig) => {
+    process.stderr.write(`[harness:vite] exited code=${code} sig=${sig}\n`)
   })
 
   const devUrl = await waitForViteReady(child)
