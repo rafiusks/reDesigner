@@ -20,6 +20,7 @@
  *  10. Bogus bearer on authenticated route → 401 body has error=auth, reason=token-unknown
  *  11. 403 body on malformed-origin exchange request → error=cors, reason=malformed-origin
  *  12. Missing Origin on exchange request → 403 body error=cors, reason=missing-origin
+ *  13. Revalidate missing/malformed Origin → CorsError-shaped 403 (shared contract)
  */
 
 import crypto from 'node:crypto'
@@ -687,5 +688,43 @@ describe('exchange + revalidate integration', () => {
     const body = JSON.parse(result.bodyText) as Record<string, unknown>
     expect(body.error).toBe('cors')
     expect(body.reason).toBe('missing-origin')
+  })
+
+  // -------------------------------------------------------------------------
+  // 13. Revalidate CORS gates share the CorsError contract with exchange.
+  // -------------------------------------------------------------------------
+  test('revalidate 403 body is CorsError-shaped on missing Origin', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/revalidate',
+      {
+        'Sec-Fetch-Site': 'cross-site',
+        Authorization: 'Bearer noop',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('missing-origin')
+  })
+
+  test('revalidate 403 body is CorsError-shaped on malformed Origin', async () => {
+    const clientNonce = crypto.randomUUID()
+    const result = await rawPost(
+      h.port,
+      '/__redesigner/revalidate',
+      {
+        Origin: 'chrome-extension://abcdefghijklmnopqrstuvwxyz123456',
+        'Sec-Fetch-Site': 'cross-site',
+        Authorization: 'Bearer noop',
+      },
+      JSON.stringify({ clientNonce, bootstrapToken: h.bootstrapTokenStr }),
+    )
+    expect(result.status).toBe(403)
+    const body = JSON.parse(result.bodyText) as Record<string, unknown>
+    expect(body.error).toBe('cors')
+    expect(body.reason).toBe('malformed-origin')
   })
 })

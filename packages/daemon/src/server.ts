@@ -136,13 +136,13 @@ export function createDaemonServer(opts: ServerOptions): {
     if (method === 'OPTIONS') {
       // Dynamic tab-scoped path.
       if (TABS_SELECTION_RE.test(pathname)) {
-        handlePreflight(req, res, 'PUT', reqId)
+        handlePreflight(req, res, 'PUT')
         return
       }
       // Static path lookup.
       const entry = OPTIONS_TABLE.find((e) => e.path === pathname)
       if (entry !== undefined) {
-        handlePreflight(req, res, entry.methods, reqId)
+        handlePreflight(req, res, entry.methods)
         return
       }
       // Unknown path: 404 with Vary.
@@ -212,9 +212,11 @@ export function createDaemonServer(opts: ServerOptions): {
         return
       }
       // 401 — machine-parseable AuthError body + WWW-Authenticate header.
-      // reason: extid-mismatch when a bearer+extId pair was tried but the session
-      //         didn't match; token-unknown for all other miss paths (no bearer,
-      //         bearer without extId, bearer that didn't match root token).
+      // Content-type is application/json (not problem+json) so clients can parse
+      // the body with AuthErrorSchema.safeParse; the discriminated union replaces
+      // RFC 7807 on this path. reason distinguishes extid-mismatch (bearer+extId
+      // tried but no matching session) from token-unknown (no bearer, bearer
+      // without extId, or bearer that didn't match root token).
       const reason: AuthError['reason'] = extIdFound ? 'extid-mismatch' : 'token-unknown'
       const authErrorBody: AuthError = { error: 'auth', reason }
       applyCorsHeaders(res, req)

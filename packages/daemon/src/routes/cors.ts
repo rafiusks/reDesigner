@@ -44,39 +44,56 @@ export function applyCorsHeaders(res: ServerResponse, req: IncomingMessage): voi
   // Access-Control-Allow-Credentials is intentionally NEVER set (see module doc).
 }
 
+// 403 bodies use application/json (not application/problem+json) so clients can
+// parse them with CorsErrorSchema.safeParse — the discriminated union replaces
+// RFC 7807 problem+json on these specific rejection paths.
+
+/** Reject with 403 + CorsError when Origin header is absent. */
+export function rejectMissingOrigin(res: ServerResponse): void {
+  const body: CorsError = { error: 'cors', reason: 'missing-origin' }
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
+  res.statusCode = 403
+  res.setHeader('Content-Type', 'application/json')
+  res.end(JSON.stringify(body))
+}
+
+/** Reject with 403 + CorsError when Origin is present but outside the allowlist. */
+export function rejectMalformedOrigin(res: ServerResponse, req: IncomingMessage): void {
+  const body: CorsError = { error: 'cors', reason: 'malformed-origin' }
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
+  applyCorsHeaders(res, req)
+  res.statusCode = 403
+  res.setHeader('Content-Type', 'application/json')
+  res.end(JSON.stringify(body))
+}
+
 /**
  * Handle an OPTIONS preflight request.
  *
  * Returns 204 on success (allowed origin + known path).
- * Returns 403 + problem body on disallowed Origin.
+ * Returns 403 + CorsError body on disallowed Origin.
  *
  * The caller is responsible for checking if the pathname is known;
  * this function handles the CORS protocol layer only.
  *
  * @param allowedMethods Comma-free list, e.g. 'GET' or 'PUT' or 'POST'.
- * @param reqId Request ID for problem body instance.
  */
 export function handlePreflight(
   req: IncomingMessage,
   res: ServerResponse,
   allowedMethods: string,
-  reqId: string,
 ): void {
-  // Always set Vary first (even on rejections — per spec, Vary must be set on
-  // all CORS-reachable responses including preflights and error responses).
   res.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
 
   const originHeader = req.headers.origin
   const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader
 
-  if (typeof origin !== 'string' || !ALLOWED_ORIGIN_RE.test(origin)) {
-    // Disallowed origin: 403 + machine-parseable CorsError body.
-    const reason: CorsError['reason'] =
-      typeof origin !== 'string' ? 'missing-origin' : 'malformed-origin'
-    const body: CorsError = { error: 'cors', reason }
-    res.statusCode = 403
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify(body))
+  if (typeof origin !== 'string') {
+    rejectMissingOrigin(res)
+    return
+  }
+  if (!ALLOWED_ORIGIN_RE.test(origin)) {
+    rejectMalformedOrigin(res, req)
     return
   }
 
