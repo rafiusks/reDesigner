@@ -8,7 +8,7 @@ import { handleHealthGet } from './routes/health.js'
 import { handleManifestGet } from './routes/manifest.js'
 import {
   handleSelectionGet,
-  handleSelectionPost,
+  handleSelectionPut,
   handleSelectionRecentGet,
 } from './routes/selection.js'
 import { handleShutdownPost } from './routes/shutdown.js'
@@ -22,6 +22,9 @@ export interface ServerOptions {
   ctx: RouteContext
 }
 
+// Regex for /tabs/<positive-integer>/selection — compiled once at module level.
+const TABS_SELECTION_RE = /^\/tabs\/(\d+)\/selection$/
+
 export function createDaemonServer(opts: ServerOptions): {
   server: http.Server
   close: () => Promise<void>
@@ -29,7 +32,7 @@ export function createDaemonServer(opts: ServerOptions): {
   // Rate-limit buckets — created per-server so close() isolates state.
   const unauthBucket = createTokenBucket({ ratePerSec: 10, burst: 10 })
   const getBucket = createTokenBucket({ ratePerSec: 100, burst: 100 })
-  const selectionPostBucket = createTokenBucket({ ratePerSec: 120, burst: 30 })
+  const selectionPutBucket = createTokenBucket({ ratePerSec: 120, burst: 30 })
   const computedStylesBucket = createTokenBucket({ ratePerSec: 5, burst: 5 })
   const domSubtreeBucket = createTokenBucket({ ratePerSec: 5, burst: 5 })
 
@@ -112,11 +115,61 @@ export function createDaemonServer(opts: ServerOptions): {
         handleManifestGet(req, res, opts.ctx)
         return
       }
-      if (method === 'POST' && pathname === '/selection') {
-        if (!tryBucket(res, reqId, selectionPostBucket)) return
-        await handleSelectionPost(req, res, opts.ctx)
+
+      // Legacy /selection path — gone entirely (410) regardless of HTTP method.
+      // Path resolution precedes method dispatch: POST /selection also returns 410.
+      // GET /selection is excluded above (backward-compat snapshot read stays).
+      if (pathname === '/selection' && method !== 'GET') {
+        const p = problem(
+          410,
+          'Gone',
+          'This endpoint has moved to PUT /tabs/{tabId}/selection',
+          reqId,
+        )
+        const body: typeof p & { apiErrorCode: string } = { ...p, apiErrorCode: 'endpoint-moved' }
+        res.statusCode = 410
+        res.setHeader('Content-Type', 'application/problem+json')
+        res.end(JSON.stringify(body))
         return
       }
+
+      // /tabs/{tabId}/selection — tab-scoped resource (Task 10).
+      // Path resolution runs first; method dispatch is secondary.
+      const tabsMatch = TABS_SELECTION_RE.exec(pathname)
+      if (tabsMatch !== null) {
+        const tabIdRaw = Number(tabsMatch[1])
+        // Validate: positive integer (chrome tab IDs are always positive)
+        if (!Number.isInteger(tabIdRaw) || tabIdRaw <= 0) {
+          sendProblem(
+            res,
+            problem(400, 'InvalidRequest', 'tabId must be a positive integer', reqId),
+          )
+          return
+        }
+        if (method === 'PUT') {
+          if (!tryBucket(res, reqId, selectionPutBucket)) return
+          await handleSelectionPut(req, res, opts.ctx, tabIdRaw)
+          return
+        }
+        // Wrong method on this known path → 405 with Allow header.
+        // No Deprecation/Sunset headers (POST was never supported here).
+        res.setHeader('Allow', 'PUT')
+        const p = problem(
+          405,
+          'MethodNotAllowed',
+          `method ${method} not allowed for ${pathname}`,
+          reqId,
+        )
+        const body: typeof p & { apiErrorCode: string } = {
+          ...p,
+          apiErrorCode: 'method-not-allowed',
+        }
+        res.statusCode = 405
+        res.setHeader('Content-Type', 'application/problem+json')
+        res.end(JSON.stringify(body))
+        return
+      }
+
       if (method === 'POST' && pathname === '/computed_styles') {
         if (!tryBucket(res, reqId, computedStylesBucket)) return
         // 6. Concurrency cap for browser-tool routes is enforced inside handleBrowserToolPost
@@ -215,7 +268,7 @@ function allowedMethodsFor(pathname: string): string {
     case '/manifest':
       return 'GET'
     case '/selection':
-      return 'GET, POST'
+      return 'GET'
     case '/computed_styles':
     case '/dom_subtree':
     case '/shutdown':

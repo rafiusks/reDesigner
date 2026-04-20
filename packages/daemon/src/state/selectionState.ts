@@ -16,6 +16,7 @@ export type ApplyKind = 'noop' | 'promoted' | 'new'
 export interface ApplyResult {
   kind: ApplyKind
   current: ComponentHandle | null
+  selectionSeq: number
 }
 
 export interface StaleResolution {
@@ -30,26 +31,38 @@ export class SelectionState {
   private current: SelectionRecord | null = null
   private history: SelectionRecord[] = []
   private readonly HISTORY_CAP = 50
+  /** Per-tab monotonic sequence counter. Keyed by tabId (positive integer). */
+  private readonly tabSeqMap = new Map<number, number>()
 
-  apply(incoming: SelectionRecord): ApplyResult {
+  /** Increment and return the per-tab seq for the given tabId. */
+  nextTabSeq(tabId: number): number {
+    const prev = this.tabSeqMap.get(tabId) ?? 0
+    const next = prev + 1
+    this.tabSeqMap.set(tabId, next)
+    return next
+  }
+
+  apply(incoming: SelectionRecord, tabId?: number): ApplyResult {
     const id = getSelectionId(incoming)
+    const selectionSeq = tabId !== undefined ? this.nextTabSeq(tabId) : 0
     if (this.current && getSelectionId(this.current) === id) {
-      return { kind: 'noop', current: this.current.handle }
+      return { kind: 'noop', current: this.current.handle, selectionSeq }
     }
     const idx = this.history.findIndex((r) => getSelectionId(r) === id)
     if (idx >= 0) {
       const existing = this.history.splice(idx, 1)[0]
-      if (existing === undefined) return { kind: 'new', current: this.current?.handle ?? null }
+      if (existing === undefined)
+        return { kind: 'new', current: this.current?.handle ?? null, selectionSeq }
       this.history.unshift(existing)
       this.current = existing
-      return { kind: 'promoted', current: existing.handle }
+      return { kind: 'promoted', current: existing.handle, selectionSeq }
     }
     this.history.unshift(incoming)
     if (this.history.length > this.HISTORY_CAP) this.history.length = this.HISTORY_CAP
     const head = this.history[0]
-    if (head === undefined) return { kind: 'new', current: null }
+    if (head === undefined) return { kind: 'new', current: null, selectionSeq }
     this.current = head
-    return { kind: 'new', current: this.current.handle }
+    return { kind: 'new', current: this.current.handle, selectionSeq }
   }
 
   rescan(manifest: Manifest): StaleResolution {

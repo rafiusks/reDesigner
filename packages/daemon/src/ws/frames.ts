@@ -24,6 +24,8 @@ export const SelectionUpdatedFrameSchema = z.object({
   payload: z.object({
     current: ComponentHandleSchema,
     staleManifest: z.boolean(),
+    tabId: z.number().int().positive(),
+    selectionSeq: z.number().int().nonnegative(),
   }),
 })
 

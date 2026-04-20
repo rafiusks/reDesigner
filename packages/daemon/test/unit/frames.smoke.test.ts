@@ -53,6 +53,8 @@ describe('frame schemas', () => {
             timestamp: 0,
           },
           staleManifest: false,
+          tabId: 42,
+          selectionSeq: 1,
         },
       }).success,
     ).toBe(true)

@@ -1,11 +1,11 @@
 import crypto from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { ComponentHandleSchema } from '@redesigner/core'
+import { SelectionPutBodySchema } from '@redesigner/core/schemas'
 import { problem, readJsonBody, sendJson, sendProblem } from '../types.js'
 import type { RouteContext } from '../types.js'
 
 // All Zod schemas at module top-level — CLAUDE.md: in-handler z.object() is a v4 regression cliff.
-const BodySchema = ComponentHandleSchema
+const PutBodySchema = SelectionPutBodySchema
 
 export function handleSelectionGet(
   _req: IncomingMessage,
@@ -40,10 +40,18 @@ export function handleSelectionRecentGet(
   sendJson(res, 200, recent.slice(0, n))
 }
 
-export async function handleSelectionPost(
+/**
+ * PUT /tabs/{tabId}/selection
+ *
+ * Tab-scoped selection resource. Body: SelectionPutBodySchema.
+ * Returns {selectionSeq, acceptedAt}. Broadcasts selection.updated with
+ * tabId and selectionSeq so clients can correlate cross-tab activity.
+ */
+export async function handleSelectionPut(
   req: IncomingMessage,
   res: ServerResponse,
   ctx: RouteContext,
+  tabId: number,
 ): Promise<void> {
   const reqId = crypto.randomBytes(8).toString('hex')
   let body: unknown
@@ -56,14 +64,21 @@ export async function handleSelectionPost(
     return
   }
 
-  const parsed = BodySchema.safeParse(body)
+  const parsed = PutBodySchema.safeParse(body)
   if (!parsed.success) {
     const detail = parsed.error.issues.map((i) => i.message).join('; ')
     sendProblem(res, problem(400, 'InvalidRequest', detail, reqId))
     return
   }
 
-  const handle = parsed.data
+  const { nodes, meta } = parsed.data
+  // v0: single-select only; the schema enforces min(1)/max(1) on nodes.
+  const handle = nodes[0]
+  if (handle === undefined) {
+    sendProblem(res, problem(400, 'InvalidRequest', 'nodes array is empty', reqId))
+    return
+  }
+
   const manifest = ctx.manifestWatcher.getCached()
   const staleManifest =
     manifest === null ||
@@ -79,17 +94,24 @@ export async function handleSelectionPost(
       ? { receivedAt: Date.now(), staleManifest, manifestContentHashAtIntake: manifest.contentHash }
       : { receivedAt: Date.now(), staleManifest }
 
-  const result = ctx.selectionState.apply({ handle, provenance })
+  const result = ctx.selectionState.apply({ handle, provenance }, tabId)
+  const acceptedAt = Date.now()
 
   if (result.kind === 'new' || result.kind === 'promoted') {
     const current = result.current
     if (current !== null) {
       ctx.eventBus.broadcast({
         type: 'selection.updated',
-        payload: { current, staleManifest },
+        payload: {
+          current,
+          staleManifest,
+          tabId,
+          selectionSeq: result.selectionSeq,
+          ...(meta !== undefined ? { source: meta.source } : {}),
+        },
       })
     }
   }
 
-  sendJson(res, 200, { kind: result.kind, current: result.current })
+  sendJson(res, 200, { selectionSeq: result.selectionSeq, acceptedAt })
 }
