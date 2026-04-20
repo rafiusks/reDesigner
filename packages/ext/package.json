@@ -9,6 +9,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "dogfood:perf": "tsx scripts/dogfood-perf.ts",
     "test": "vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:e2e:smoke": "pnpm run build && playwright test --project=@smoke",
