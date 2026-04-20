@@ -170,17 +170,11 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
       return
     }
 
-    // Rate-limit: per-ext-ID bucket. Pre-flight consume to block bucket-empty
-    // attackers before doing any further work.
-    const bucket = getFailedBucket(extId)
-    if (!bucket.tryConsume()) {
-      res.setHeader('Retry-After', String(bucket.retryAfterSec()))
-      sendProblem(res, problem(429, 'TooManyRequests', 'revalidate rate limit exceeded', reqId))
-      return
-    }
-
     // Gate 3: Session-token gate — Authorization: Bearer <sessionToken>.
     // The session token must be currently active for this ext-ID.
+    // NOTE: session gate runs before rate-limit consume so that unauthenticated
+    // noise never touches the bucket (Origin gate handles that). The bucket is
+    // there to rate-limit a stuck authenticated client's revalidate churn.
     const sessionBearer = extractBearer(req)
     if (sessionBearer === undefined) {
       sendProblem(res, problem(401, 'Unauthorized', 'session token required', reqId))
@@ -189,6 +183,14 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     if (!exchange.isSessionActive(extId, sessionBearer)) {
       logger.warn('[revalidate] invalid or expired session token', { extId })
       sendProblem(res, problem(401, 'Unauthorized', 'session token invalid or expired', reqId))
+      return
+    }
+
+    // Rate-limit: per-ext-ID bucket. Only authenticated clients reach this point.
+    const bucket = getFailedBucket(extId)
+    if (!bucket.tryConsume()) {
+      res.setHeader('Retry-After', String(bucket.retryAfterSec()))
+      sendProblem(res, problem(429, 'TooManyRequests', 'revalidate rate limit exceeded', reqId))
       return
     }
 
@@ -210,7 +212,7 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
       return
     }
 
-    const { clientNonce, bootstrapToken: providedBootstrap } = parsed.data
+    const { clientNonce } = parsed.data
 
     // Gate 4: bootstrapToken match (constant-time).
     // Re-validates the client holds the current bootstrap token, re-grounding
@@ -254,17 +256,13 @@ export function createRevalidateRoute(opts: CreateRevalidateRouteOptions): Reval
     // Successful revalidation: reset the failed-bucket for this ext-ID.
     resetFailedBucket(extId)
 
-    logger.warn('[revalidate] session rotated', { extId })
+    logger.info('[revalidate] session rotated', { extId })
 
     sendJson(res, 200, {
       sessionToken: newSessionToken,
       exp: expSec,
       serverNonce,
     })
-
-    // Suppress unused-variable warnings: providedBootstrap is accepted for
-    // forward-compat (bootstrap rotation) but not validated in v0.
-    void providedBootstrap
   }
 
   return { handler }

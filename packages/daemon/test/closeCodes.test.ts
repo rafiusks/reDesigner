@@ -17,7 +17,7 @@
  *   4408  | DAEMON        | Pong timeout
  *   4409  | DAEMON        | Already subscribed (second concurrent subscriber)
  *
- * Negative tests below assert the daemon NEVER emits 1000, 1005, 1006, 1015.
+ * Negative tests below assert the daemon NEVER emits 1000, 1001, 1005, 1006, 1015.
  *
  * /revalidate endpoint tests are in the second half of this file.
  */
@@ -525,12 +525,12 @@ describe('close-code: 1011 — unexpected server error (not currently wired)', (
 // Section 2: Negative tests — codes the daemon MUST NEVER emit
 // ===========================================================================
 
-describe('negative: daemon never emits client-only close codes (1000, 1005, 1015)', () => {
+describe('negative: daemon never emits client-only close codes (1000, 1001, 1005, 1015)', () => {
   // Note: 1006 (abnormal close, no close frame) CAN appear on the bearer-only
   // socket-drop path — documented in events.ts as the one unavoidable exception.
   // It is NOT a daemon-emitted close code; it is the client-side observation of
   // a socket drop. We exclude 1006 from this negative suite.
-  const FORBIDDEN_CODES = [1000, 1005, 1015] as const
+  const FORBIDDEN_CODES = [1000, 1001, 1005, 1015] as const
 
   const bearer = crypto.randomBytes(32).toString('base64url')
   const token = Buffer.from(bearer, 'utf8')
@@ -1008,8 +1008,12 @@ describe('/revalidate — standalone route', () => {
   // -------------------------------------------------------------------------
 
   it('per-ext-ID rate-limit: repeated failed revalidations from same ext-ID get 429', async () => {
+    // Rate-limit bucket is only consumed by authenticated clients (session gate
+    // comes before bucket.tryConsume() since Fix 4). Use a valid session token
+    // but send schema-invalid bodies so every request fails after the session
+    // check — the bucket drains and 429 appears within burst+1 attempts.
     const h = await mountRevalidateHarness()
-    await doExchange(h.port)
+    const currentToken = (await doExchange(h.port)).sessionToken
 
     let saw429 = false
     for (let i = 0; i < 15; i++) {
@@ -1019,10 +1023,11 @@ describe('/revalidate — standalone route', () => {
         {
           Origin: ORIGIN_A,
           'Sec-Fetch-Site': 'cross-site',
-          Authorization: 'Bearer wrong-session-token',
+          Authorization: `Bearer ${currentToken}`,
         },
         JSON.stringify({
-          clientNonce: crypto.randomBytes(16).toString('base64url'),
+          // clientNonce too short — fails BodySchema, bucket consumed, no rotation.
+          clientNonce: 'short',
           bootstrapToken: bootstrapToken.toString('utf8'),
         }),
       )
@@ -1068,9 +1073,11 @@ describe('/revalidate — standalone route', () => {
 
   it('revalidate rate-limit bucket is separate from exchange bucket', async () => {
     const h = await mountRevalidateHarness()
-    await doExchange(h.port)
+    const { sessionToken } = await doExchange(h.port)
 
-    // Exhaust the revalidate bucket with failures.
+    // Exhaust the revalidate bucket with authenticated-but-failing requests
+    // (schema-invalid body). Post-Fix-4 the session gate runs before tryConsume,
+    // so only authenticated failures drain the bucket.
     for (let i = 0; i < 15; i++) {
       await rawPost(
         h.port,
@@ -1078,10 +1085,11 @@ describe('/revalidate — standalone route', () => {
         {
           Origin: ORIGIN_A,
           'Sec-Fetch-Site': 'cross-site',
-          Authorization: 'Bearer wrong-session-token',
+          Authorization: `Bearer ${sessionToken}`,
         },
         JSON.stringify({
-          clientNonce: crypto.randomBytes(16).toString('base64url'),
+          // clientNonce too short — fails BodySchema without rotating session.
+          clientNonce: 'short',
           bootstrapToken: bootstrapToken.toString('utf8'),
         }),
       )
