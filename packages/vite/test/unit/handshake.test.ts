@@ -182,6 +182,31 @@ describe('/__redesigner/handshake.json middleware', () => {
     expect(captured.statusCode).toBe(403)
   })
 
+  it('GET with Sec-Fetch-Site: same-site → 403', () => {
+    const mw = createHandshakeMiddleware(makeOptions())
+    const { req, res, captured } = mockReqRes({
+      host: 'localhost:5173',
+      secFetchDest: 'empty',
+      secFetchSite: 'same-site',
+    })
+    mw(req, res, () => {})
+    expect(captured.statusCode).toBe(403)
+  })
+
+  it('GET with Origin: "null" (literal) → 403', () => {
+    const mw = createHandshakeMiddleware(makeOptions())
+    const { req, res, captured } = mockReqRes({
+      host: 'localhost:5173',
+      origin: 'null',
+      secFetchDest: 'empty',
+      secFetchSite: 'none',
+    })
+    mw(req, res, () => {})
+    expect(captured.statusCode).toBe(403)
+    const body = JSON.parse(captured.body) as { apiErrorCode: string }
+    expect(body.apiErrorCode).toBe('host-rejected')
+  })
+
   it('GET with Host: evil.example.com → 421', () => {
     const mw = createHandshakeMiddleware(makeOptions())
     const { req, res, captured } = mockReqRes({
@@ -208,6 +233,9 @@ describe('/__redesigner/handshake.json middleware', () => {
     expect(captured.headers.allow).toBe('GET')
     const body = JSON.parse(captured.body) as { apiErrorCode: string }
     expect(body.apiErrorCode).toBe('method-not-allowed')
+    expect(captured.headers['cache-control']).toBe('no-store, private')
+    expect(captured.headers.pragma).toBe('no-cache')
+    expect(captured.headers.vary).toBe('Origin, Sec-Fetch-Site, Sec-Fetch-Dest')
   })
 
   it('Cache-Control: no-store, private is set', () => {
@@ -299,6 +327,7 @@ describe('/__redesigner/handshake.json middleware', () => {
     expect(captured.statusCode).toBe(503)
     const body = JSON.parse(captured.body) as { apiErrorCode: string }
     expect(body.apiErrorCode).toBe('extension-disconnected')
+    expect(captured.headers.vary).toBe('Origin, Sec-Fetch-Site, Sec-Fetch-Dest')
   })
 
   it('bootstrap.rotate() returns a NEW token and subsequent GET serves it', () => {

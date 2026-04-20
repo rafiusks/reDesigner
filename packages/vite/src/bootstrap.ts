@@ -77,6 +77,12 @@ export const HANDSHAKE_PATH = '/__redesigner/handshake.json'
 // chrome-extension://<32 lowercase letters> — matches daemon's CORS allowlist shape.
 const CHROME_EXT_ORIGIN_RE = /^chrome-extension:\/\/[a-z]{32}$/
 
+function writeNoStoreHeaders(res: ServerResponse): void {
+  res.setHeader('Cache-Control', 'no-store, private')
+  res.setHeader('Pragma', 'no-cache')
+  res.setHeader('Vary', 'Origin, Sec-Fetch-Site, Sec-Fetch-Dest')
+}
+
 type NextFn = (err?: unknown) => void
 
 export type HandshakeMiddleware = (req: IncomingMessage, res: ServerResponse, next: NextFn) => void
@@ -100,6 +106,7 @@ export function createHandshakeMiddleware(opts: HandshakeMiddlewareOptions): Han
       res.statusCode = 405
       res.setHeader('Allow', 'GET')
       res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
+      writeNoStoreHeaders(res)
       res.end(
         JSON.stringify({
           type: 'https://redesigner.dev/errors/method-not-allowed',
@@ -146,8 +153,7 @@ export function createHandshakeMiddleware(opts: HandshakeMiddlewareOptions): Han
     if (!daemon) {
       res.statusCode = 503
       res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
-      res.setHeader('Cache-Control', 'no-store, private')
-      res.setHeader('Pragma', 'no-cache')
+      writeNoStoreHeaders(res)
       res.end(
         JSON.stringify({
           type: 'https://redesigner.dev/errors/extension-disconnected',
@@ -163,21 +169,36 @@ export function createHandshakeMiddleware(opts: HandshakeMiddlewareOptions): Han
     // Success: emit headers + body. Body values are validated through the schema
     // to prevent drift between the plugin and core's HandshakeSchema.
     const token = opts.bootstrap.current()
-    const body = HandshakeSchema.parse({
-      wsUrl: `ws://127.0.0.1:${daemon.port}/events`,
-      httpUrl: `http://127.0.0.1:${daemon.port}`,
-      bootstrapToken: token,
-      editor: opts.editor,
-      pluginVersion: opts.pluginVersion,
-      daemonVersion: daemon.serverVersion,
-    })
+    let body: ReturnType<typeof HandshakeSchema.parse>
+    try {
+      body = HandshakeSchema.parse({
+        wsUrl: `ws://127.0.0.1:${daemon.port}/events`,
+        httpUrl: `http://127.0.0.1:${daemon.port}`,
+        bootstrapToken: token,
+        editor: opts.editor,
+        pluginVersion: opts.pluginVersion,
+        daemonVersion: daemon.serverVersion,
+      })
+    } catch (err: unknown) {
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
+      writeNoStoreHeaders(res)
+      res.end(
+        JSON.stringify({
+          type: 'https://redesigner.dev/errors/internal-error',
+          title: 'InternalError',
+          status: 500,
+          apiErrorCode: 'internal-error',
+          detail: err instanceof Error ? err.message : 'HandshakeSchema validation failed',
+        }),
+      )
+      return
+    }
 
     res.statusCode = 200
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
     res.setHeader('X-Redesigner-Bootstrap', token)
-    res.setHeader('Cache-Control', 'no-store, private')
-    res.setHeader('Pragma', 'no-cache')
-    res.setHeader('Vary', 'Origin, Sec-Fetch-Site, Sec-Fetch-Dest')
+    writeNoStoreHeaders(res)
     res.end(JSON.stringify(body))
   }
 }
@@ -196,9 +217,7 @@ function isAllowedHost(host: string | undefined, port: number): boolean {
 function writeHostRejected(res: ServerResponse, status: number, detail: string): void {
   res.statusCode = status
   res.setHeader('Content-Type', 'application/problem+json; charset=utf-8')
-  res.setHeader('Cache-Control', 'no-store, private')
-  res.setHeader('Pragma', 'no-cache')
-  res.setHeader('Vary', 'Origin, Sec-Fetch-Site, Sec-Fetch-Dest')
+  writeNoStoreHeaders(res)
   res.end(
     JSON.stringify({
       type: 'https://redesigner.dev/errors/host-rejected',

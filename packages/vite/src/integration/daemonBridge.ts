@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Readable, Writable } from 'node:stream'
+import type { DaemonInfo } from '../bootstrap'
 import type { Logger } from '../core/types-internal'
 
 export interface DaemonHandle {
@@ -117,7 +118,7 @@ export class DaemonBridge {
    * the file fails to parse. Any parse failure is silent by design — the
    * middleware maps null to a 503 degraded response.
    */
-  getDaemonInfo(): { port: number; serverVersion: string } | null {
+  getDaemonInfo(): DaemonInfo | null {
     if (!this.handle || !this.handoffPath) return null
     let raw: string
     try {
