@@ -53,7 +53,6 @@ async function nextFrame(): Promise<void> {
 
 async function microtask(): Promise<void> {
   await Promise.resolve()
-  await Promise.resolve()
 }
 
 // ---- Tests -------------------------------------------------------------------
@@ -71,6 +70,7 @@ describe('createPicker — shadow host topology', () => {
     picker?.dispose()
     picker = null
     resetDom()
+    vi.restoreAllMocks()
   })
 
   it('attaches the shadow host as a child of documentElement when no :modal is open', () => {
@@ -206,6 +206,7 @@ describe('createPicker — live region & announcements', () => {
     picker?.dispose()
     picker = null
     resetDom()
+    vi.restoreAllMocks()
   })
 
   it('creates an aria-live region in document.body (not in shadow root)', () => {
@@ -257,6 +258,7 @@ describe('createPicker — window listeners & event suppression', () => {
     picker?.dispose()
     picker = null
     resetDom()
+    vi.restoreAllMocks()
   })
 
   it('suppresses contextmenu and dragstart during arm; does not suppress after disarm', () => {
@@ -292,7 +294,11 @@ describe('createPicker — window listeners & event suppression', () => {
     expect(findPickerHost()).toBeNull()
   })
 
-  it('click during arm commits and disarms; preventDefault is applied', () => {
+  it('click during arm commits and disarms; preventDefault is applied (propagation-only path — no prior hover)', () => {
+    // This test covers the *fallback* commit path: a click arrives with no
+    // prior pointermove, so _lastHoverTarget is null and the handler falls
+    // back to ev.target. See the hitTest-backed test below for the full
+    // hover-to-commit path.
     const target = document.createElement('a')
     target.href = 'http://example.invalid/'
     target.textContent = 'link'
@@ -324,6 +330,78 @@ describe('createPicker — window listeners & event suppression', () => {
     expect(picker.isArmed()).toBe(false)
   })
 
+  it('hover (pointermove+rAF) updates the highlight rectangle over the hovered element; click commits that element via hitTest', async () => {
+    // End-to-end hitTest-backed hover-to-commit. Exercises the real flow:
+    // pointermove → rAF → hitTest → highlight positioned → click commits
+    // _lastHoverTarget (which hitTest resolved through shadow recursion).
+    const btn = document.createElement('button')
+    btn.textContent = 'target'
+    Object.assign(btn.style, {
+      position: 'fixed',
+      left: '120px',
+      top: '80px',
+      width: '100px',
+      height: '40px',
+      margin: '0',
+      padding: '0',
+      border: '0',
+    })
+    document.body.appendChild(btn)
+
+    const onCommit = vi.fn()
+    picker = createPicker({ onCommit })
+    picker.arm()
+
+    const rect = btn.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+
+    // Dispatch a mouse-type pointermove at the button's centre.
+    window.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        cancelable: false,
+        clientX: cx,
+        clientY: cy,
+        pointerType: 'mouse',
+      }),
+    )
+
+    // Wait for the rAF to flush hover resolution.
+    await nextFrame()
+
+    const highlight = document
+      .querySelector<HTMLElement>('[data-redesigner-picker-host]')
+      ?.shadowRoot?.querySelector<HTMLElement>('div')
+    expect(highlight).toBeTruthy()
+    expect(highlight?.style.display).toBe('block')
+    // Geometry check — parse the px values the picker wrote via Object.assign.
+    const parsePx = (v: string | undefined): number => (v ? Number.parseFloat(v) : Number.NaN)
+    const left = parsePx(highlight?.style.left)
+    const top = parsePx(highlight?.style.top)
+    const width = parsePx(highlight?.style.width)
+    const height = parsePx(highlight?.style.height)
+    expect(left).toBeCloseTo(rect.left, 0)
+    expect(top).toBeCloseTo(rect.top, 0)
+    expect(width).toBeCloseTo(rect.width, 0)
+    expect(height).toBeCloseTo(rect.height, 0)
+
+    // Now click at the same point. handleClick should commit _lastHoverTarget
+    // (the button), not some ancestor the MouseEvent target walks to.
+    window.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        clientX: cx,
+        clientY: cy,
+      }),
+    )
+
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit.mock.calls[0]?.[0]).toBe(btn)
+    expect(picker.isArmed()).toBe(false)
+  })
+
   it('pointercancel resets hover state (does not throw; picker remains armed)', () => {
     picker = createPicker()
     picker.arm()
@@ -346,6 +424,7 @@ describe('createPicker — modal-opens-while-armed detection', () => {
     picker?.dispose()
     picker = null
     resetDom()
+    vi.restoreAllMocks()
   })
 
   it('aborts pick when a native <dialog>.showModal() fires while armed', async () => {
@@ -419,6 +498,7 @@ describe('createPicker — idempotency & dispose', () => {
     picker?.dispose()
     picker = null
     resetDom()
+    vi.restoreAllMocks()
   })
 
   it('arm() and disarm() are idempotent', () => {

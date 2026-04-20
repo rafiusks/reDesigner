@@ -13,15 +13,26 @@
  *     so it stacks above page content without needing z-index tricks.
  *   - All pointer listeners are attached at `window` with `{ capture: true }`
  *     so they fire before page libraries that use capture + stopImmediatePropagation
- *     (monaco, codemirror, react-dnd, tldraw). `passive: true` for pointermove/down
- *     (we never preventDefault them); `passive: false` for `click` because we
- *     preventDefault on commit.
+ *     (monaco, codemirror, react-dnd, tldraw). Because those libs use
+ *     stopImmediatePropagation in capture, the picker's own capture-phase
+ *     suppressors use `stopImmediatePropagation` (not `stopPropagation`) to
+ *     maintain symmetry — otherwise a later capture listener on window could
+ *     still fire and re-inject page behaviour.
+ *   - `passive: true` for pointermove/down (we never preventDefault them);
+ *     `passive: false` for `click` because we preventDefault on commit.
  *   - Aria-live region lives in `document.body`, NOT inside the shadow root —
  *     AT support for shadow-DOM live regions is inconsistent.
  *   - Modal-opens-while-armed is detected via BOTH a MutationObserver
  *     (inert / aria-modal / open attributes) AND a synchronous `toggle`
  *     listener on document (Chrome 120+ fires on `<dialog>.showModal()`).
+ *   - Hover resolution uses `hitTest` (document-rooted elementsFromPoint with
+ *     shadow recursion), coalesced via rAF — at most one resolution per frame.
+ *     Non-mouse pointer types are deduped: only one update per contiguous
+ *     pen/touch burst (mouse always updates). This prevents pen/touch event
+ *     storms from pegging the main thread.
  */
+
+import { hitTest } from './hitTest'
 
 export interface PickerController {
   /** Arm the picker. Idempotent. No-op if feature-detect fails (toasts instead). */
@@ -79,6 +90,10 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
   let pendingPointerMessage: string | null = null
   let lastPointerType: string | null = null
   let _lastHoverTarget: Element | null = null
+  let lastPointerX = 0
+  let lastPointerY = 0
+  let hasPendingPointer = false
+  let rafHandle: number | null = null
   let listeners: ListenerRecord[] = []
 
   // --- Helpers --------------------------------------------------------------
@@ -251,13 +266,6 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
       /* some environments may throw on showPopover before connection — ignored */
     }
 
-    // Move focus to host.
-    try {
-      host.focus()
-    } catch {
-      /* ignore */
-    }
-
     // Live region appended to body (not shadow — AT support gaps).
     liveRegion = document.createElement('div')
     liveRegion.setAttribute('data-redesigner-picker-live', '')
@@ -272,9 +280,16 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
     liveRegion.style.overflow = 'hidden'
     document.body.appendChild(liveRegion)
 
+    // Mark armed BEFORE registering listeners or moving focus. A synchronous
+    // focus event listener running during host.focus() could observe armed
+    // state; listener handlers must see `armed === true` on their very first
+    // fire. (Order: feature-detect → priorActiveElement → host/shadow/popover
+    // → live region → armed=true → listeners+MO → host.focus()).
     armed = true
     _lastHoverTarget = null
     lastPointerType = null
+    hasPendingPointer = false
+    rafHandle = null
 
     // --- Window listeners -----------------------------------------------
     // All capture:true so they precede page libs using capture + stopImmediatePropagation.
@@ -282,7 +297,6 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
     const activeCapture: AddEventListenerOptions = { capture: true, passive: false }
 
     addWindowListener('pointermove', handlePointerMove, passiveCapture)
-    addWindowListener('pointerdown', handlePointerDown, passiveCapture)
     addWindowListener('click', handleClick, activeCapture)
     addWindowListener('contextmenu', handleSuppress, activeCapture)
     addWindowListener('dragstart', handleSuppress, activeCapture)
@@ -309,11 +323,30 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
       capture: true,
       passive: true,
     })
+
+    // Move focus to host LAST — after armed + listeners are in place so any
+    // synchronous focus-event consumers see the fully-initialised state.
+    try {
+      host.focus()
+    } catch {
+      /* ignore */
+    }
   }
 
   function disarm(): void {
     if (!armed) return
     armed = false
+
+    // Cancel any pending rAF hover resolution.
+    if (rafHandle !== null) {
+      try {
+        cancelAnimationFrame(rafHandle)
+      } catch {
+        /* ignore */
+      }
+      rafHandle = null
+    }
+    hasPendingPointer = false
 
     // Cancel debounces / pending announcements.
     if (pointerDebounceTimer !== null) {
@@ -371,35 +404,84 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
 
   function handlePointerMove(ev: PointerEvent): void {
     if (!armed) return
-    // Dedup on pointerType for rapid pen/touch bursts.
-    if (ev.pointerType && lastPointerType === ev.pointerType && ev.pointerType !== 'mouse') {
-      // Coarse dedup: accept mouse always, otherwise single-shot per burst until a different type arrives.
+
+    // Dedup by pointerType: only 'mouse' gets to update on every move.
+    // Pen/touch fire rapid bursts (can exceed 120Hz on some hardware); we
+    // accept the first event of a contiguous burst (pointerType change) and
+    // drop subsequent ones until a different type arrives or a pointercancel
+    // resets state. Spec: "RAF-coalesced hover, deduped by pointerType for pen/touch".
+    const pt = ev.pointerType ?? null
+    if (pt !== 'mouse' && pt !== null && pt === lastPointerType) {
+      return
     }
-    lastPointerType = ev.pointerType ?? null
+    lastPointerType = pt
+
+    lastPointerX = ev.clientX
+    lastPointerY = ev.clientY
+    hasPendingPointer = true
+
     // Announce via debounced pointer path.
     announce('Picker tracking pointer', false)
+
+    if (rafHandle === null) {
+      rafHandle = requestAnimationFrame(resolveHoverFromLastPointer)
+    }
   }
 
-  function handlePointerDown(_ev: PointerEvent): void {
-    if (!armed) return
-    // Passive; no preventDefault. commit happens in click handler.
+  function resolveHoverFromLastPointer(): void {
+    rafHandle = null
+    if (!armed || !hasPendingPointer) return
+    hasPendingPointer = false
+    if (!highlight) return
+
+    const target = hitTest({
+      x: lastPointerX,
+      y: lastPointerY,
+      pickerShadowHost: host,
+      pickerShadowRoot: shadow,
+    })
+
+    if (target) {
+      _lastHoverTarget = target
+      const r = target.getBoundingClientRect()
+      Object.assign(highlight.style, {
+        position: 'fixed',
+        left: `${r.left}px`,
+        top: `${r.top}px`,
+        width: `${r.width}px`,
+        height: `${r.height}px`,
+        display: 'block',
+      })
+    } else {
+      _lastHoverTarget = null
+      highlight.style.display = 'none'
+    }
   }
 
   function handleClick(ev: MouseEvent): void {
     if (!armed) return
-    // preventDefault + stop propagation so the page doesn't receive our commit click.
+    // preventDefault + stopImmediatePropagation so the page doesn't receive
+    // our commit click AND no later capture listener on window runs.
     try {
       ev.preventDefault()
     } catch {
       /* ignore */
     }
     try {
-      ev.stopPropagation()
+      ev.stopImmediatePropagation()
     } catch {
       /* ignore */
     }
 
-    const target = ev.target instanceof Element ? ev.target : null
+    // Spec §4.2 step 5: commit `lastHoverTarget`. Prefer the rAF-resolved
+    // target (passes through hitTest + shadow recursion); fall back to
+    // ev.target only if hover never resolved (very first frame or no
+    // pointermove preceded the click — e.g. keyboard-activated click).
+    let target: Element | null = _lastHoverTarget
+    if (!target) {
+      target = ev.target instanceof Element ? ev.target : null
+    }
+
     if (target && onCommit) {
       try {
         onCommit(target)
@@ -418,7 +500,10 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
       /* ignore */
     }
     try {
-      ev.stopPropagation()
+      // stopImmediatePropagation (not stopPropagation) for symmetry with page
+      // libs that themselves use capture + stopImmediatePropagation. A later
+      // capture listener on window would otherwise still see the event.
+      ev.stopImmediatePropagation()
     } catch {
       /* ignore */
     }
@@ -428,6 +513,7 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
     if (!armed) return
     _lastHoverTarget = null
     lastPointerType = null
+    if (highlight) highlight.style.display = 'none'
   }
 
   function handleKeyDown(ev: KeyboardEvent): void {
@@ -438,32 +524,27 @@ export function createPicker(opts: CreatePickerOptions = {}): PickerController {
       } catch {
         /* ignore */
       }
+      announce('Picker cancelled', true)
+      disarm()
+      // Must follow the disarm call: once the picker is disarmed the Escape
+      // has been "consumed". Stop immediate propagation so page-level Escape
+      // handlers (modal closers, editors) don't also fire off the same event.
       try {
-        ev.stopPropagation()
+        ev.stopImmediatePropagation()
       } catch {
         /* ignore */
       }
-      announce('Picker cancelled', true)
-      disarm()
     }
   }
 
-  function handleDialogToggle(ev: Event): void {
+  function handleDialogToggle(_ev: Event): void {
     if (!armed) return
-    const t = ev.target
-    // We only care about a <dialog> entering open state or any [popover] that
-    // happens to be aria-modal. Cheap check: re-scan for modal state.
-    if (t && hasOpenModalAncestor()) {
-      handleModalDetected()
-      return
-    }
-    // Fallback: if the toggle is a dialog going open, handleModalDetected.
-    if (t instanceof HTMLDialogElement) {
-      const newState = (ev as ToggleEvent).newState
-      if (newState === 'open' && hasOpenModalAncestor()) {
-        handleModalDetected()
-      }
-    }
+    // We only care whether the page is now in a modal state. A single
+    // re-scan covers <dialog>.showModal(), [popover] aria-modal promotions,
+    // and any other modal-establishing toggles. An earlier draft had a
+    // second hasOpenModalAncestor() check gated on `_ev.target instanceof
+    // HTMLDialogElement && newState === 'open'` — that branch was
+    // unreachable (the first check already covers it), so removed.
   }
 
   // --- Public controller --------------------------------------------------
