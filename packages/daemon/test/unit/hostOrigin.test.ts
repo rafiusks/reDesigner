@@ -68,12 +68,20 @@ async function listenOnEphemeral(token: Buffer): Promise<{
   close: () => Promise<void>
 }> {
   const bearer = Buffer.from(token).toString('utf8')
-  const probe = createDaemonServer({ port: 0, token, ctx: makeCtx() })
+  const bootstrapToken = Buffer.from(crypto.randomBytes(32))
+  const rootToken = Buffer.from(crypto.randomBytes(32))
+  const probe = createDaemonServer({ port: 0, token, bootstrapToken, rootToken, ctx: makeCtx() })
   await new Promise<void>((resolve) => probe.server.listen(0, '127.0.0.1', () => resolve()))
   const assigned = (probe.server.address() as AddressInfo).port
   await probe.close()
 
-  const real = createDaemonServer({ port: assigned, token, ctx: makeCtx() })
+  const real = createDaemonServer({
+    port: assigned,
+    token,
+    bootstrapToken,
+    rootToken,
+    ctx: makeCtx(),
+  })
   await new Promise<void>((resolve) => real.server.listen(assigned, '127.0.0.1', () => resolve()))
   return {
     url: `http://127.0.0.1:${assigned}`,

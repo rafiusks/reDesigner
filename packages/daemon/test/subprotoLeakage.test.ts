@@ -75,12 +75,26 @@ async function listenOnEphemeral(
   port: number
   close: () => Promise<void>
 }> {
-  const probe = createDaemonServer({ port: 0, token, ctx: ctx ?? makeCtx() })
+  const bootstrapToken = Buffer.from(crypto.randomBytes(32))
+  const rootToken = Buffer.from(crypto.randomBytes(32))
+  const probe = createDaemonServer({
+    port: 0,
+    token,
+    bootstrapToken,
+    rootToken,
+    ctx: ctx ?? makeCtx(),
+  })
   await new Promise<void>((resolve) => probe.server.listen(0, '127.0.0.1', () => resolve()))
   const assigned = (probe.server.address() as AddressInfo).port
   await probe.close()
 
-  const real = createDaemonServer({ port: assigned, token, ctx: ctx ?? makeCtx() })
+  const real = createDaemonServer({
+    port: assigned,
+    token,
+    bootstrapToken,
+    rootToken,
+    ctx: ctx ?? makeCtx(),
+  })
   await new Promise<void>((resolve) => real.server.listen(assigned, '127.0.0.1', () => resolve()))
   return {
     port: assigned,
@@ -322,13 +336,15 @@ describe('subproto leakage — Test C: logger never receives bearer suffix', () 
     const bearer = crypto.randomBytes(32).toString('base64url')
     const token = Buffer.from(bearer, 'utf8')
     const ctx = makeCtx()
+    const bootstrapToken = Buffer.from(crypto.randomBytes(32))
+    const rootToken = Buffer.from(crypto.randomBytes(32))
 
-    const probe = createDaemonServer({ port: 0, token, ctx })
+    const probe = createDaemonServer({ port: 0, token, bootstrapToken, rootToken, ctx })
     await new Promise<void>((resolve) => probe.server.listen(0, '127.0.0.1', () => resolve()))
     const assigned = (probe.server.address() as AddressInfo).port
     await probe.close()
 
-    const real = createDaemonServer({ port: assigned, token, ctx })
+    const real = createDaemonServer({ port: assigned, token, bootstrapToken, rootToken, ctx })
     await new Promise<void>((resolve) => real.server.listen(assigned, '127.0.0.1', () => resolve()))
 
     try {
@@ -362,13 +378,15 @@ describe('subproto leakage — Test C: logger never receives bearer suffix', () 
     const bearer = crypto.randomBytes(32).toString('base64url')
     const token = Buffer.from(bearer, 'utf8')
     const ctx = makeCtx()
+    const bootstrapToken = Buffer.from(crypto.randomBytes(32))
+    const rootToken = Buffer.from(crypto.randomBytes(32))
 
-    const probe = createDaemonServer({ port: 0, token, ctx })
+    const probe = createDaemonServer({ port: 0, token, bootstrapToken, rootToken, ctx })
     await new Promise<void>((resolve) => probe.server.listen(0, '127.0.0.1', () => resolve()))
     const assigned = (probe.server.address() as AddressInfo).port
     await probe.close()
 
-    const real = createDaemonServer({ port: assigned, token, ctx })
+    const real = createDaemonServer({ port: assigned, token, bootstrapToken, rootToken, ctx })
     await new Promise<void>((resolve) => real.server.listen(assigned, '127.0.0.1', () => resolve()))
 
     try {

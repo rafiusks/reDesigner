@@ -27,6 +27,8 @@ import { attachEvents } from './ws/events.js'
 export interface ServerOptions {
   port: number
   token: Buffer
+  bootstrapToken: Buffer
+  rootToken: Buffer
   ctx: RouteContext
 }
 
