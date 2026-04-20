@@ -16,11 +16,21 @@
 
 import { handleActionClicked } from './actionHandler.js'
 import { hydrate } from './hydrate.js'
+import { routeMessage } from './messageRouter.js'
+import type { TabHandshake } from './messageRouter.js'
 import { createPanelPort } from './panelPort.js'
 
 // Module-level panel-snapshot cache. One instance for the SW's lifetime; the
 // cache survives across panel open/close cycles on the same SW generation.
 const panelPort = createPanelPort()
+
+// Per-tab handshake cache keyed by tabId. Populated by the content script's
+// `register` message; consumed by `get-manifest` to hit the daemon's
+// `GET /manifest` with the right Bearer token.
+const tabHandshakes = new Map<number, TabHandshake>()
+// Per-tab session cache, minted via POST /__redesigner/exchange on first
+// daemon request and reused until near-expiry.
+const tabSessions = new Map<number, { sessionToken: string; exp: number }>()
 
 // ---------------------------------------------------------------------------
 // Boot epoch — increment synchronously at module load. Type-guard the write.
@@ -55,41 +65,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   readyPromise
-    .then(() => {
-      // `register` — content script completed the page-side handshake. Surface
-      // the tab origin to the panel so Welcome transitions from waiting →
-      // detected. The SW-side exchange/wsClient wiring still lands in later
-      // tasks; for now we just reflect the fact that a redesigner-enabled
-      // page is live in this tab.
-      if (
-        typeof msg === 'object' &&
-        msg !== null &&
-        (msg as { type?: unknown }).type === 'register'
-      ) {
-        const tabId = sender.tab?.id
-        const windowId = sender.tab?.windowId
-        const tabUrl = sender.tab?.url
-        console.log('[redesigner:sw] register from tab', {
-          tabId,
-          windowId,
-          tabUrl,
-          frameId: sender.frameId,
-        })
-        if (typeof tabId === 'number' && typeof windowId === 'number' && tabUrl) {
-          let origin: string | null = null
-          try {
-            origin = new URL(tabUrl).origin
-          } catch {
-            /* non-http tab; leave origin null */
-          }
-          panelPort.push(windowId, tabId, { status: 'connected', serverUrl: origin })
-          console.log('[redesigner:sw] pushed serverUrl', origin, 'to panel', { windowId, tabId })
-        } else {
-          console.warn('[redesigner:sw] register: missing tab metadata on sender')
-        }
-      }
-      sendResponse({ ok: true })
-    })
+    .then(() => routeMessage(msg, sender, sendResponse, { panelPort, tabHandshakes, tabSessions }))
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err)
       sendResponse({ error: message })

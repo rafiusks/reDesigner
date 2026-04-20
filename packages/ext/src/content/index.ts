@@ -1,3 +1,5 @@
+import type { Manifest } from '@redesigner/core'
+import { extractHandle } from './extractHandle.js'
 import { fetchHandshake, parseHandshakeJson, readMetaHandshake } from './handshake.js'
 import type { HandshakeResult } from './handshake.js'
 import { createPicker } from './picker.js'
@@ -9,11 +11,44 @@ let _beforeUnloadHandler: (() => void) | null = null
 let _running = false
 let _picker: PickerController | null = null
 
+async function requestManifest(): Promise<Manifest> {
+  const res = (await chrome.runtime.sendMessage({ type: 'get-manifest' })) as
+    | { manifest: Manifest }
+    | { error: string }
+    | undefined
+  if (!res) throw new Error('get-manifest: no response')
+  if ('error' in res) throw new Error(res.error)
+  return res.manifest
+}
+
+async function handlePickerCommit(el: Element): Promise<void> {
+  let manifest: Manifest
+  try {
+    manifest = await requestManifest()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn('[redesigner:cs] manifest unavailable', message)
+    return
+  }
+  const result = await extractHandle({ el, manifestPromise: Promise.resolve(manifest) })
+  if (!result.ok) {
+    console.warn('[redesigner:cs] extractHandle failed', result.reason)
+    return
+  }
+  console.log('[redesigner:cs] selection', result.handle)
+  try {
+    await chrome.runtime.sendMessage({ type: 'selection', handle: result.handle })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn('[redesigner:cs] sendMessage selection failed', message)
+  }
+}
+
 function getPicker(): PickerController {
   if (!_picker) {
     _picker = createPicker({
       onCommit: (el) => {
-        console.log('[redesigner:cs] picker commit', el)
+        void handlePickerCommit(el)
       },
     })
   }
