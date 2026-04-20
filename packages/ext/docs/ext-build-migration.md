@@ -75,7 +75,7 @@ Procedure:
 
 1. Generate a new key pair (never reuse old material):
    ```sh
-   node -e "const {generateKeyPairSync}=require('crypto');const{publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});console.log(publicKey.export({type:'spki',format:'der'}).toString('base64'))"
+   node --input-type=module -e "import { generateKeyPairSync } from 'node:crypto'; const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 }); console.log(publicKey.export({ type: 'spki', format: 'der' }).toString('base64'))"
    ```
 2. Replace the `key` string in `packages/ext/manifest.json` with the emitted base64 value.
 3. Note that the **extension ID changes** — any developer with the old unpacked extension loaded will see a different ID on next reload. Anyone relying on the old ID (e.g., hand-edited allowlists, bookmarks, daemon `externally_connectable` entries once Web Store bindings ship) must update.

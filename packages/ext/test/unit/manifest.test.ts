@@ -91,18 +91,17 @@ describe('packages/ext manifest.json scaffold', () => {
     const m = loadManifest()
     const cs = m.content_scripts ?? []
 
-    // Entry order in the manifest: [0] = document_start bootstrap, [1] = document_end main
-    const bootstrap = cs[0]
-    const main = cs[1]
-    expect(bootstrap?.run_at).toBe('document_start')
-    expect(main?.run_at).toBe('document_end')
+    // Order-independent lookup by run_at value.
+    const byRunAt = new Map(cs.map((c) => [c.run_at, c]))
+    const bootstrap = byRunAt.get('document_start')
+    const main = byRunAt.get('document_end')
+    expect(bootstrap).toBeDefined()
+    expect(main).toBeDefined()
 
     const bootstrapJs = bootstrap?.js?.[0]
     const mainJs = main?.js?.[0]
-    expect(typeof bootstrapJs).toBe('string')
-    expect(typeof mainJs).toBe('string')
-    expect(bootstrapJs).toMatch(/bootstrap/i)
-    expect(mainJs).toMatch(/index|main|content/i)
+    expect(bootstrapJs).toBe('src/content/bootstrap.ts')
+    expect(mainJs).toBe('src/content/index.ts')
 
     // Files must exist on disk so CRXJS can resolve them.
     expect(existsSync(resolve(pkgRoot, bootstrapJs as string))).toBe(true)

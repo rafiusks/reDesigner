@@ -8,17 +8,17 @@
   "action": {
     "default_title": "reDesigner",
     "default_icon": {
-      "16": "public/icons/icon-16.png",
-      "32": "public/icons/icon-32.png",
-      "48": "public/icons/icon-48.png",
-      "128": "public/icons/icon-128.png"
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
     }
   },
   "icons": {
-    "16": "public/icons/icon-16.png",
-    "32": "public/icons/icon-32.png",
-    "48": "public/icons/icon-48.png",
-    "128": "public/icons/icon-128.png"
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
   },
   "side_panel": {
     "default_path": "src/panel/index.html"
@@ -64,6 +64,5 @@
     "http://127.0.0.1/*",
     "http://*.localhost/*",
     "http://[::1]/*"
-  ],
-  "web_accessible_resources": []
+  ]
 }
