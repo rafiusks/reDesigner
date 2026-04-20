@@ -54,7 +54,10 @@ export async function persistSelection(
   }
   const handle = parsed.data
 
-  let cold = false
+  // Optimistic: assume cold until ensureSession reports cache-hit. An exchange
+  // failure then correctly reports cold=true in the perf log rather than
+  // silently attributing the latency to the warm path.
+  let cold = true
   let phase: 'exchange' | 'put' = 'exchange'
   try {
     const { sessionToken, cold: sessionCold } = await ensureSession(tabId, hs, deps)

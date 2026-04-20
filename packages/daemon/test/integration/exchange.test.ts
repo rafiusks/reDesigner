@@ -18,6 +18,7 @@
  *   8. GET /__redesigner/exchange without Bearer → 401 (unauth path; 401 is stricter than 405)
  *   9. GET /__redesigner/exchange with valid Bearer → 405 Allow: POST (authed but wrong method)
  *  10. Bogus bearer on authenticated route → 401 body has error=auth, reason=token-unknown
+ *  10a. Bogus bearer + valid X-Redesigner-Ext-Id → 401 body reason=extid-mismatch
  *  11. 403 body on malformed-origin exchange request → error=cors, reason=malformed-origin
  *  12. Missing Origin on exchange request → 403 body error=cors, reason=missing-origin
  *  13. Revalidate missing/malformed Origin → CorsError-shaped 403 (shared contract)
@@ -647,6 +648,26 @@ describe('exchange + revalidate integration', () => {
     const body = (await res.json()) as Record<string, unknown>
     expect(body.error).toBe('auth')
     expect(body.reason).toBe('token-unknown')
+  })
+
+  // -------------------------------------------------------------------------
+  // 10a. Bogus bearer + valid-format X-Redesigner-Ext-Id → extid-mismatch
+  //      (extId present → session lookup runs → no session matches bearer)
+  // -------------------------------------------------------------------------
+  test('401 body has error=auth, reason=extid-mismatch when extId is supplied but session missing', async () => {
+    const res = await fetch(`${h.url}/manifest`, {
+      headers: {
+        Authorization: 'Bearer bogus-token-12345',
+        'X-Redesigner-Ext-Id': 'abcdefghijklmnopabcdefghijklmnop',
+        Host: `127.0.0.1:${h.port}`,
+        Connection: 'close',
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.error).toBe('auth')
+    expect(body.reason).toBe('extid-mismatch')
   })
 
   // -------------------------------------------------------------------------

@@ -111,7 +111,7 @@ export async function routeMessage(
       const res = await fetch(new URL('/manifest', hs.httpUrl).toString(), {
         headers: {
           Authorization: `Bearer ${sessionToken}`,
-          'X-Redesigner-Ext-Id': chrome.runtime.id,
+          'X-Redesigner-Ext-Id': deps.extId,
         },
         credentials: 'omit',
         cache: 'no-store',
