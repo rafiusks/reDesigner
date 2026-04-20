@@ -53,6 +53,14 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Install Playwright browsers
         run: pnpm --filter @redesigner/ext exec playwright install --with-deps chromium
+      - name: Build workspace packages
+        # ext's vite build + playground's vite dev both resolve
+        # @redesigner/core/schemas (and daemon/mcp) via their dist/
+        # exports fields. On a fresh runner those dists don't exist yet,
+        # so build here before running the e2e harness. Scoped to
+        # ./packages/* to avoid examples/playground's ERR_IMPORT_ATTRIBUTE_MISSING
+        # JSON-import pitfall on Node 22 (matches ci.yml's typecheck step).
+        run: pnpm --filter './packages/*' run build
       - name: Run nightly e2e harness
         env:
           PW_FULL_HARNESS: '1'
