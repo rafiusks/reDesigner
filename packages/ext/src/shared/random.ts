@@ -19,3 +19,17 @@ export function nextFullJitterDelay(attempts: number): number {
   const bound = Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** attempts)
   return current() * bound
 }
+
+/**
+ * "fixed base + jitter" delay (spec §4.4 for 1012/1013/4408).
+ *
+ * Value is always at least `baseMs` (no negative jitter) and at most
+ * `baseMs + jitterMs`. Uses the same module-level random as
+ * `nextFullJitterDelay` so tests can control it via `setRandom`.
+ */
+export function nextFixedDelay(baseMs: number, jitterMs: number): number {
+  if (baseMs < 0 || jitterMs < 0 || !Number.isFinite(baseMs) || !Number.isFinite(jitterMs)) {
+    throw new RangeError('baseMs and jitterMs must be non-negative finite numbers')
+  }
+  return baseMs + current() * jitterMs
+}
