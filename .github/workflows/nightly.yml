@@ -1,0 +1,109 @@
+name: nightly
+on:
+  schedule:
+    # 02:00 UTC every day. Runs full Playwright harness + leak-baseline diff.
+    # Why this hour: post-midnight PT avoids contention with weekday release runs.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      refresh_baseline:
+        description: 'Update leak-baseline.json with this run results'
+        required: false
+        default: 'false'
+permissions:
+  contents: read
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  nightly:
+    timeout-minutes: 60
+    runs-on: ubuntu-24.04
+    env:
+      PW_FULL_HARNESS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Corepack preflight
+        shell: bash
+        run: |
+          V=$(corepack --version || echo "0.0")
+          MAJOR=$(echo "$V" | cut -d. -f1)
+          MINOR=$(echo "$V" | cut -d. -f2)
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -lt 31 ]; then
+            npm install -g corepack@latest
+          fi
+          corepack enable pnpm
+          pnpm --version
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-ubuntu-24.04-22-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-ubuntu-24.04-22-
+            pnpm-ubuntu-24.04-
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Install Playwright browsers
+        run: pnpm --filter @redesigner/ext exec playwright install --with-deps chromium
+      - name: Run nightly e2e harness
+        env:
+          PW_FULL_HARNESS: '1'
+        run: pnpm --filter @redesigner/ext test:e2e:nightly
+      - name: leak-baseline diff check
+        shell: bash
+        env:
+          BASELINE_PATH: packages/ext/leak-baseline.json
+          CURRENT_PATH: packages/ext/leak-current.json
+        run: |
+          # Compare current harness leak metrics against packages/ext/leak-baseline.json.
+          # A regression here is the canary for SW heap / storage.session growth.
+          node -e '
+            const fs = require("node:fs");
+            let cur;
+            try { cur = JSON.parse(fs.readFileSync(process.env.CURRENT_PATH, "utf8")); }
+            catch (e) {
+              if (e.code === "ENOENT") { console.warn("::warning::No leak-current.json emitted by harness; skipping diff"); process.exit(0); }
+              throw e;
+            }
+            const base = JSON.parse(fs.readFileSync(process.env.BASELINE_PATH, "utf8"));
+            const grow = (k) => {
+              const b = base[k] ?? 0;
+              const c = cur[k] ?? 0;
+              if (b === 0) return c > 0 ? Infinity : 0;
+              return ((c - b) / b) * 100;
+            };
+            const sw = grow("swHeapBytes");
+            const st = grow("storageSessionBytes");
+            console.log("sw heap growth:", sw.toFixed(1), "% ; storage.session growth:", st.toFixed(1), "%");
+            if (sw > 10 || st > 10) {
+              console.error("::error::leak regression exceeds 10% threshold");
+              process.exit(1);
+            }
+          '
+      - name: Refresh baseline (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REFRESH: ${{ github.event.inputs.refresh_baseline }}
+        shell: bash
+        run: |
+          if [ "$REFRESH" = "true" ] && [ -f packages/ext/leak-current.json ]; then
+            cp packages/ext/leak-current.json packages/ext/leak-baseline.json
+            echo "baseline refreshed — commit the update in a follow-up PR"
+          fi
+      - name: Upload nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-e2e
+          path: |
+            packages/ext/playwright-report/
+            packages/ext/leak-current.json
+            packages/ext/test-results/

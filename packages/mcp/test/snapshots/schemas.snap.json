@@ -1,0 +1,85 @@
+{
+  "resources": [
+    {
+      "description": "Full component manifest produced by the Vite plugin",
+      "mimeType": "application/json",
+      "name": "Project Manifest",
+      "uri": "redesigner://project/manifest"
+    },
+    {
+      "description": "Detected framework, project name, MCP server version",
+      "mimeType": "application/json",
+      "name": "Project Configuration",
+      "uri": "redesigner://project/config"
+    }
+  ],
+  "tools": [
+    {
+      "description": "Returns the currently selected component, or null if nothing is currently selected.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "get_current_selection"
+    },
+    {
+      "description": "Returns up to the n most-recent selections, newest first. Returns an empty array if no selections have been made.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "n": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n"
+        ],
+        "type": "object"
+      },
+      "name": "list_recent_selections"
+    },
+    {
+      "description": "Returns computed CSS styles for the selection referenced by `selectionId` (the `id` field of a `ComponentHandle` returned by `get_current_selection` or `list_recent_selections`). Returns null if the style information is not currently available.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "selectionId": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "selectionId"
+        ],
+        "type": "object"
+      },
+      "name": "get_computed_styles"
+    },
+    {
+      "description": "Returns a serialized DOM subtree rooted at the selection referenced by `selectionId` (the `id` field of a `ComponentHandle` returned by `get_current_selection` or `list_recent_selections`), up to `depth` levels deep. Returns null if the subtree is not currently available.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "maximum": 10,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectionId": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "selectionId",
+          "depth"
+        ],
+        "type": "object"
+      },
+      "name": "get_dom_subtree"
+    }
+  ]
+}

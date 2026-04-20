@@ -1,0 +1,70 @@
+{
+  "name": "@redesigner/vite",
+  "version": "0.0.0",
+  "private": true,
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./reader": {
+      "types": "./dist/reader.d.ts",
+      "import": "./dist/reader.js"
+    },
+    "./manifest-schema.json": "./dist/manifest-schema.json"
+  },
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup && pnpm run generate-schema",
+    "generate-schema": "tsx scripts/generate-schema.ts",
+    "test": "vitest run",
+    "test:parallelism": "vitest run --config test/vitest.parallelism.config.ts",
+    "test:daemon-real": "vitest run --config test/vitest.daemon-real.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "peerDependencies": {
+    "@vitejs/plugin-react": "^5",
+    "vite": "^5 || ^6 || ^7"
+  },
+  "peerDependenciesMeta": {
+    "@vitejs/plugin-react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@babel/core": "^7",
+    "@babel/parser": "^7",
+    "@babel/traverse": "^7",
+    "@babel/types": "^7",
+    "@redesigner/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@babel/generator": "^7",
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "@types/babel__core": "^7",
+    "@types/babel__generator": "^7",
+    "@types/babel__traverse": "^7",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "fast-check": "^3",
+    "react": "^19",
+    "react-dom": "^19",
+    "ts-json-schema-generator": "^2",
+    "tsup": "^8",
+    "tsx": "^4",
+    "typescript": "^5.5.0",
+    "vite": "^7",
+    "vitest": "^2"
+  }
+}

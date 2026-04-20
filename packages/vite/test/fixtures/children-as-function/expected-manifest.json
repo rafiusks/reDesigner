@@ -1,0 +1,40 @@
+{
+  "filePath": "src/input.tsx",
+  "components": {
+    "src/input.tsx::Row": {
+      "filePath": "src/input.tsx",
+      "exportKind": "named",
+      "lineRange": [
+        8,
+        10
+      ],
+      "displayName": "Row"
+    },
+    "src/input.tsx::X": {
+      "filePath": "src/input.tsx",
+      "exportKind": "named",
+      "lineRange": [
+        12,
+        14
+      ],
+      "displayName": "X"
+    }
+  },
+  "locs": {
+    "src/input.tsx:9:9": {
+      "componentKey": "src/input.tsx::Row",
+      "filePath": "src/input.tsx",
+      "componentName": "Row"
+    },
+    "src/input.tsx:13:9": {
+      "componentKey": "src/input.tsx::X",
+      "filePath": "src/input.tsx",
+      "componentName": "X"
+    },
+    "src/input.tsx:13:30": {
+      "componentKey": "src/input.tsx::X",
+      "filePath": "src/input.tsx",
+      "componentName": "X"
+    }
+  }
+}

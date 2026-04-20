@@ -1,0 +1,1 @@
+export default () => <div data-redesigner-loc="src/input.tsx:1:21" />;

@@ -1,0 +1,20 @@
+name: sync-ruleset
+on:
+  push:
+    branches: [main]
+    paths: ['.github/rulesets/**']
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+jobs:
+  sync:
+    if: github.repository_owner == 'OWNER_PLACEHOLDER'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync / detect drift
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_PAT }}
+        run: |
+          node .github/scripts/sync-rulesets.mjs \
+            --mode=${{ github.event_name == 'schedule' && 'drift-check' || 'sync' }}

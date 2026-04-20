@@ -2,8 +2,20 @@ node_modules/
 dist/
 coverage/
 .redesigner/
+# Keep synthetic test fixtures that live under .redesigner/ subdirs.
+!packages/mcp/test/fixtures/**/.redesigner/
+!packages/mcp/test/fixtures/**/.redesigner/**
 pnpm-debug.log
 .DS_Store
 
 # Local session state for Claude Code tooling
 .remember/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.superpowers/
+
+.husky/_
+*.tsbuildinfo
+
+# vitest-browser auto-screenshots on failure
+**/test/**/__screenshots__/

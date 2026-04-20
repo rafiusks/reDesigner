@@ -1,0 +1,21 @@
+{
+  "filePath": "src/input.tsx",
+  "components": {
+    "src/input.tsx::Card": {
+      "filePath": "src/input.tsx",
+      "exportKind": "named",
+      "lineRange": [
+        7,
+        10
+      ],
+      "displayName": "Card"
+    }
+  },
+  "locs": {
+    "src/input.tsx:8:10": {
+      "componentKey": "src/input.tsx::Card",
+      "filePath": "src/input.tsx",
+      "componentName": "Card"
+    }
+  }
+}

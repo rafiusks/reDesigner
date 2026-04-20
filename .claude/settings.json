@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/fixture-guard.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/rebuild-core-if-touched.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/biome-format.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+# Force LF for all text files. Windows git defaults to core.autocrlf=true,
+# which rewrites line endings on checkout; Biome then flags files as needing
+# formatting. This keeps CI lint green across Linux + Windows.
+* text=auto eol=lf
+
+# Binary files — never modify.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary

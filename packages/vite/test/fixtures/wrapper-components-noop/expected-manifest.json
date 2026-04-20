@@ -1,0 +1,21 @@
+{
+  "filePath": "src/input.tsx",
+  "components": {
+    "src/input.tsx::X": {
+      "filePath": "src/input.tsx",
+      "exportKind": "named",
+      "lineRange": [
+        3,
+        11
+      ],
+      "displayName": "X"
+    }
+  },
+  "locs": {
+    "src/input.tsx:7:8": {
+      "componentKey": "src/input.tsx::X",
+      "filePath": "src/input.tsx",
+      "componentName": "X"
+    }
+  }
+}

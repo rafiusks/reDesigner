@@ -1,0 +1,10 @@
+{
+  "_comment": "Scenario: SW fetches manifest on first extract-handle call. Hand-crafted for v0.",
+  "expected": [
+    {
+      "type": "storage.local.set",
+      "args": { "manifest": "{\"version\":\"1.0.0\",\"components\":[\"Button\",\"Input\"]}" }
+    },
+    { "type": "storage.session.set", "args": { "manifestCacheAt": 1700000000000 } }
+  ]
+}

@@ -1,0 +1,2 @@
+## 2026-04-20
+Initial contract goldens committed for CloseReasonSchema, ComponentHandleSchema, ExchangeRequestSchema, ExchangeResponseSchema, HandshakeSchema, JsonRpcErrorSchema, JsonRpcNotificationSchema, JsonRpcRequestSchema, JsonRpcResponseSchema, ManifestSchema, SelectionFileSchema, SelectionPutBodySchema, SelectionPutResponseSchema, WsFrameSchema using z.toJSONSchema() with $schema key stripped.

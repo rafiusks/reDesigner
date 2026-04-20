@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "chrome"],
+    "noEmit": true
+  },
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
+}

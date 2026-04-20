@@ -1,0 +1,4 @@
+<!-- human -->
+Represents the scenario where a developer toggles between `export default memo(function Foo() {...})` and `export default function Foo() {...}`. This fixture captures the AFTER (memo-wrapped) state. The spec notes this transition as a React Fast Refresh hazard (facebook/react#30659) handled at the Vite plugin / HMR level, not at the Babel level. Here we just confirm that the memo-wrapped form resolves component name correctly (`Foo`, from the declared function identifier inside `memo(...)`).
+
+Note: `styled(Button)` in `hoc-wrapped` does NOT unwrap, but `memo(function Foo() {...})` — the resolver's unwrap function returns the memo argument only if it's an arrow/function expression. The function expression inside has its own name (`Foo`), which IS used. Verify the generated output names it correctly.

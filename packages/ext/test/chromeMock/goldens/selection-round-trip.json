@@ -1,0 +1,8 @@
+{
+  "_comment": "Scenario: CS registers → SW opens WS → daemon pushes hello → SW responds. Hand-crafted for v0. See fidelity.test.ts TODO for headed-Chromium recording follow-up.",
+  "expected": [
+    { "type": "storage.session.set", "args": { "sessionToken": "tok-test-1234" } },
+    { "type": "action.setIcon", "args": { "path": "icons/connected.png" } },
+    { "type": "runtime.sendMessage", "args": { "type": "hello-ack", "token": "tok-test-1234" } }
+  ]
+}

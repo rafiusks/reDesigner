@@ -1,0 +1,22 @@
+{
+  "current": {
+    "id": "sel-001",
+    "componentName": "Foo",
+    "filePath": "src/Foo.tsx",
+    "lineRange": [1, 5],
+    "domPath": "#root > div.foo",
+    "parentChain": ["App", "Foo"],
+    "timestamp": 1700000000000
+  },
+  "history": [
+    {
+      "id": "sel-000-bar",
+      "componentName": "Bar",
+      "filePath": "src/Bar.tsx",
+      "lineRange": [1, 3],
+      "domPath": "#root > section > div.bar",
+      "parentChain": ["App", "Bar"],
+      "timestamp": 1699999999000
+    }
+  ]
+}
