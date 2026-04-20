@@ -10,6 +10,8 @@
  *   2. sessionToken from exchange works on GET /manifest → not 401
  *   3. Invalid bootstrapToken → 401
  *   4. Missing Origin → 403
+ *   4a. Origin with q-z characters (invalid ext ID) → 403
+ *   4b. Origin with only a-p characters (valid ext ID) → 200
  *   5. clientNonce replay → 401
  *   6. Rate-limit pre-consumption → 429 (drains 5 burst tokens then asserts)
  *   7. POST /__redesigner/revalidate after successful exchange → new sessionToken
@@ -402,7 +404,8 @@ describe('exchange + revalidate integration', () => {
   // -------------------------------------------------------------------------
   test('Origin with q-z characters (not valid Chrome ext ID) → 403', async () => {
     const clientNonce = crypto.randomUUID()
-    const invalidOrigin = 'chrome-extension://abcdefghijklmnopqrstuvwxyz123456' // contains q-z
+    // q-z letters fall outside [a-p]; digits also fail the char class.
+    const invalidOrigin = 'chrome-extension://abcdefghijklmnopqrstuvwxyz123456'
     const result = await rawPost(
       h.port,
       '/__redesigner/exchange',
