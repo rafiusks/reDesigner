@@ -398,7 +398,7 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     const iatSec = Math.floor(iatMs / 1000)
     const serverNonce = crypto.randomBytes(24).toString('base64url').replace(/=+$/, '')
     const sessionToken = mintSessionToken(clientNonce, serverNonce, iatSec)
-    const expSec = iatSec + SESSION_TTL_SEC
+    const expMs = iatMs + SESSION_TTL_SEC * 1000
 
     // Side effects (persist pin, rotate session, consume nonce).
     if (decision.persist) {
@@ -417,7 +417,7 @@ export function createExchangeRoute(opts: CreateExchangeRouteOptions): ExchangeR
     noStorePrivate(res)
     sendJson(res, 200, {
       sessionToken,
-      exp: expSec,
+      exp: expMs,
       serverNonce,
     })
   }
