@@ -14,7 +14,8 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@redesigner/core": "workspace:*"
+    "@redesigner/core": "workspace:*",
+    "zod": "^3.25.0 || ^4.0.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "~2.4.0",
@@ -22,6 +23,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "happy-dom": "^15",
     "typescript": "^5.5.0",
     "vite": "^7",
     "vitest": "^2"
