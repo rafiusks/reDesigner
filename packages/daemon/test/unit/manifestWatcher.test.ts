@@ -619,17 +619,19 @@ describe('ManifestWatcher — stat-poll detects missed fs.watch event', () => {
     // Yield to allow real-async fsStat to complete and scheduleReread to register
     // the fake debounce setTimeout(100). A Promise.resolve() tick is not enough
     // since fsStat involves real I/O; use a real setImmediate-equivalent.
+    // Bump from 50ms → 250ms for slower CI runner I/O.
     await new Promise<void>((res) => {
       vi.useRealTimers()
-      setTimeout(res, 50)
+      setTimeout(res, 250)
     })
     vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
     // Now advance past the 100ms debounce so reread() fires
     await vi.advanceTimersByTimeAsync(200)
-    // Yield again for the reread async chain (fd.open, fd.stat, fd.read, fd.close) to complete
+    // Yield again for the reread async chain (fd.open, fd.stat, fd.read, fd.close) to complete.
+    // Bump from 100ms → 400ms for slower CI runner I/O.
     await new Promise<void>((res) => {
       vi.useRealTimers()
-      setTimeout(res, 100)
+      setTimeout(res, 400)
     })
     vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
 

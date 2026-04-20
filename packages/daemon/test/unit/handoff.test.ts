@@ -216,7 +216,7 @@ describe('writeHandoff — EEXIST reclaim with dead pid', () => {
     expect(HandoffSchema.safeParse(JSON.parse(raw)).success).toBe(true)
   })
 
-  it('reclaim replaces the old file (old inode is gone)', () => {
+  it('reclaim replaces the old file with new content', () => {
     const deadPid = findDeadPid()
     const projectDir = testBase
     const handoffPath = handoffPathInDir(testBase, projectDir)
@@ -224,15 +224,18 @@ describe('writeHandoff — EEXIST reclaim with dead pid', () => {
     fs.mkdirSync(path.dirname(handoffPath), { recursive: true, mode: 0o700 })
     const staleHandoff = makeHandoff({ pid: deadPid, projectRoot: projectDir })
     fs.writeFileSync(handoffPath, JSON.stringify(staleHandoff), { mode: 0o600 })
-    const oldIno = fs.lstatSync(handoffPath).ino
 
     const newHandoff = makeHandoff({ projectRoot: projectDir })
     const { fd } = writeHandoff(handoffPath, newHandoff)
     fs.closeSync(fd)
 
-    const newIno = fs.lstatSync(handoffPath).ino
-    // The unlink+recreate cycle means the inode must differ
-    expect(newIno).not.toBe(oldIno)
+    // Inode equality is not reliable across filesystems (kernel may recycle the
+    // inode number immediately after unlink). Validate the contract by content:
+    // the on-disk record must reflect the new handoff, not the stale one.
+    const raw = fs.readFileSync(handoffPath, 'utf8')
+    const parsed = JSON.parse(raw)
+    expect(parsed.pid).toBe(newHandoff.pid)
+    expect(parsed.pid).not.toBe(deadPid)
   })
 })
 
