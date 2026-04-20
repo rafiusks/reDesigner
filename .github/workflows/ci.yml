@@ -77,13 +77,24 @@ jobs:
       - name: Zod version single-major guard
         shell: bash
         run: |
-          RESOLVED=$(grep -A1 "specifier: \^3.25.0 || \^4.0.0" pnpm-lock.yaml | grep "version:" | head -1 | awk '{print $2}')
-          EXPECTED=$(cat .zod-version)
+          # Match top-level snapshot keys of the form `  zod@X.Y.Z:` (two-space
+          # indent is pnpm's convention for snapshot map entries). Refuses to
+          # pass on empty match — an empty RESOLVED or MAJOR fails the guard.
+          RESOLVED=$(grep -E '^  zod@[0-9]+\.[0-9]+\.[0-9]+:' pnpm-lock.yaml \
+            | head -1 \
+            | sed -E 's/^  zod@([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          EXPECTED=$(tr -d '[:space:]' < .zod-version)
           MAJOR=$(echo "$RESOLVED" | cut -d. -f1)
+          if [ -z "$RESOLVED" ] || [ -z "$MAJOR" ] || [ -z "$EXPECTED" ]; then
+            echo "::error::Zod version guard produced empty value: resolved='$RESOLVED' major='$MAJOR' expected='$EXPECTED'"
+            echo "::error::Lockfile format may have changed — update the grep pattern."
+            exit 2
+          fi
           if [ "$MAJOR" != "$EXPECTED" ]; then
-            echo "Zod major drift: resolved=$MAJOR expected=$EXPECTED"
+            echo "::error::Zod major drift: resolved=$RESOLVED major=$MAJOR expected=$EXPECTED"
             exit 1
           fi
+          echo "Zod guard OK: resolved=$RESOLVED major=$MAJOR expected=$EXPECTED"
       - name: Ext contract tests
         run: pnpm --filter @redesigner/ext test -- test/contract/
       - name: Fixture update guard (three-dot diff)
