@@ -105,12 +105,14 @@ describe('GET /__redesigner/debug/state — env gate off (default)', () => {
 
   beforeEach(async () => {
     // Ensure debug env is NOT set for these tests
-    process.env.REDESIGNER_DEBUG = undefined
+    // biome-ignore lint/performance/noDelete: env var removal requires delete; undefined assignment leaves key present
+    delete process.env.REDESIGNER_DEBUG
     handle = await listenOnEphemeral(token)
   })
   afterEach(async () => {
     await handle.close()
-    process.env.REDESIGNER_DEBUG = undefined
+    // biome-ignore lint/performance/noDelete: env var removal requires delete; undefined assignment leaves key present
+    delete process.env.REDESIGNER_DEBUG
   })
 
   it('returns 404 when REDESIGNER_DEBUG is not set', async () => {
@@ -132,7 +134,8 @@ describe('GET /__redesigner/debug/state — env gate on', () => {
   })
   afterEach(async () => {
     await handle.close()
-    process.env.REDESIGNER_DEBUG = undefined
+    // biome-ignore lint/performance/noDelete: env var removal requires delete; undefined assignment leaves key present
+    delete process.env.REDESIGNER_DEBUG
   })
 
   it('returns 200 with debug state shape when REDESIGNER_DEBUG=1', async () => {

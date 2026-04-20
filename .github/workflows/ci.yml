@@ -92,7 +92,7 @@ jobs:
           while IFS= read -r pat; do
             [[ -z "$pat" || "$pat" == \#* ]] && continue
             if grep -rE "$pat" packages/daemon/src/ --include='*.ts' \
-              | grep -v 'REDACT\|_PREFIX\|_RE\b\|// '; then
+              | grep -v 'REDACT_KEYS\|SUBPROTO_BEARER_RE\|SUBPROTO_BEARER_PREFIX\|MAX_SUBPROTOCOL_ENTRIES'; then
               echo "Redactor pattern '$pat' appears unguarded in daemon source"
               exit 1
             fi

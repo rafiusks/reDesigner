@@ -13,29 +13,29 @@ interface LoggerOptions {
 }
 
 // Keys whose values must always be replaced with [REDACTED].
-// Matches: authorization, sec-websocket-protocol, *token, *Token, token*
-const REDACT_KEYS = /^(authorization|sec-websocket-protocol|.*-?token|.*Token)$/i
+// Matches: authorization, sec-websocket-protocol, *token, token*
+const REDACT_KEYS = /^(authorization|sec-websocket-protocol|.*-?token)$/i
 
 // Subprotocol bearer strings — appear in WS Sec-WebSocket-Protocol header values.
 // Any occurrence in a string value is replaced with [REDACTED_SUBPROTO].
 const SUBPROTO_BEARER_RE = /base64url\.bearer\.authorization\.redesigner\.dev\.[A-Za-z0-9_-]+/g
 
-/**
- * Recursively sanitises a value before it is serialised to the log file.
- *
- * - Object keys matching REDACT_KEYS → replaced with '[REDACTED]' (entire value, regardless of type).
- * - String values → subprotocol bearer substring replaced with '[REDACTED_SUBPROTO]'.
- * - Arrays → each element processed individually.
- * - Plain objects → each key/value processed recursively (with key-level redaction taking priority).
- * - Everything else (numbers, booleans, null) → passed through unchanged.
- */
-export function redactValue(v: unknown): unknown {
+// Redacts meta objects before logging. Handles strings, arrays, and plain objects recursively.
+// Limitations: Map/Set/Buffer/TypedArray/Symbol-keyed values pass through without deep redaction.
+// Logger call sites use plain object meta so this is acceptable for v0.
+export function redactValue(v: unknown, seen = new WeakSet<object>()): unknown {
   if (typeof v === 'string') return v.replace(SUBPROTO_BEARER_RE, '[REDACTED_SUBPROTO]')
-  if (Array.isArray(v)) return v.map(redactValue)
+  if (Array.isArray(v)) {
+    if (seen.has(v)) return '[Circular]'
+    seen.add(v)
+    return v.map((x) => redactValue(x, seen))
+  }
   if (v !== null && typeof v === 'object') {
+    if (seen.has(v as object)) return '[Circular]'
+    seen.add(v as object)
     const out: Record<string, unknown> = {}
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      out[k] = REDACT_KEYS.test(k) ? '[REDACTED]' : redactValue(val)
+      out[k] = REDACT_KEYS.test(k) ? '[REDACTED]' : redactValue(val, seen)
     }
     return out
   }
