@@ -627,12 +627,14 @@ describe('ManifestWatcher — stat-poll detects missed fs.watch event', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
     // Now advance past the 100ms debounce so reread() fires
     await vi.advanceTimersByTimeAsync(200)
-    // Yield again for the reread async chain (fd.open, fd.stat, fd.read, fd.close) to complete.
-    // Bump from 100ms → 400ms for slower CI runner I/O.
-    await new Promise<void>((res) => {
-      vi.useRealTimers()
-      setTimeout(res, 400)
-    })
+    // Yield until the reread async chain (fd.open, fd.stat, fd.read, fd.close)
+    // completes + onValidated broadcasts. Poll with real-timer ticks up to
+    // 2000ms so slow CI runners don't race the assertion.
+    vi.useRealTimers()
+    const deadline = Date.now() + 2000
+    while (broadcastCount.n < 2 && Date.now() < deadline) {
+      await new Promise<void>((res) => setTimeout(res, 50))
+    }
     vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'clearTimeout', 'clearInterval'] })
 
     // The stat-poll should have detected the mtime change and scheduled a reread
