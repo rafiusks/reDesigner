@@ -1,18 +1,5 @@
 // @vitest-environment happy-dom
 
-/**
- * SW REST client — extId header plumbing (Slice A).
- *
- * Covers:
- *  1. putSelection sends X-Redesigner-Ext-Id when extId is supplied.
- *  2. putSelection omits X-Redesigner-Ext-Id when extId is undefined.
- *  3. putSelection honors custom timeoutMs (AbortSignal fires within window).
- *  4. postExchange sends X-Redesigner-Ext-Id when extId is supplied.
- *  5. postExchange omits X-Redesigner-Ext-Id when extId is undefined.
- *  6. getHealth sends X-Redesigner-Ext-Id when extId is supplied.
- *  7. getHealth omits X-Redesigner-Ext-Id when extId is undefined.
- */
-
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { DaemonRestError, getHealth, postExchange, putSelection } from '../../src/sw/rest.js'
 
@@ -53,7 +40,23 @@ function makeHealthResponse(): Response {
   })
 }
 
+// Stub fetch and return a ref the test can inspect after the call.
+// vi.stubGlobal + afterEach unstub is the codebase convention — don't use raw
+// `globalThis.fetch =` because vi.restoreAllMocks() doesn't undo it.
+function stubFetchCapture(response: () => Response): { headers: () => Headers | undefined } {
+  let captured: Headers | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url, init) => {
+      captured = new Headers(init?.headers as HeadersInit)
+      return response()
+    }),
+  )
+  return { headers: () => captured }
+}
+
 afterEach(() => {
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -63,11 +66,7 @@ afterEach(() => {
 
 describe('putSelection X-Redesigner-Ext-Id header', () => {
   test('sends X-Redesigner-Ext-Id when extId is supplied', async () => {
-    let capturedHeaders: Headers | undefined
-    globalThis.fetch = vi.fn(async (_url, init) => {
-      capturedHeaders = new Headers(init?.headers as HeadersInit)
-      return makeSelectionResponse()
-    })
+    const cap = stubFetchCapture(makeSelectionResponse)
     await putSelection({
       httpUrl: HTTP_URL,
       tabId: 1,
@@ -75,36 +74,35 @@ describe('putSelection X-Redesigner-Ext-Id header', () => {
       extId: 'abcdefghijklmnopabcdefghijklmnop',
       body: { nodes: [validHandle] },
     })
-    expect(capturedHeaders?.get('X-Redesigner-Ext-Id')).toBe('abcdefghijklmnopabcdefghijklmnop')
+    expect(cap.headers()?.get('X-Redesigner-Ext-Id')).toBe('abcdefghijklmnopabcdefghijklmnop')
   })
 
   test('omits X-Redesigner-Ext-Id when extId is undefined', async () => {
-    let capturedHeaders: Headers | undefined
-    globalThis.fetch = vi.fn(async (_url, init) => {
-      capturedHeaders = new Headers(init?.headers as HeadersInit)
-      return makeSelectionResponse()
-    })
+    const cap = stubFetchCapture(makeSelectionResponse)
     await putSelection({
       httpUrl: HTTP_URL,
       tabId: 1,
       sessionToken: 'test-session',
       body: { nodes: [validHandle] },
     })
-    expect(capturedHeaders?.has('X-Redesigner-Ext-Id')).toBe(false)
+    expect(cap.headers()?.has('X-Redesigner-Ext-Id')).toBe(false)
   })
 
   test('honors custom timeoutMs — AbortSignal fires within the timeout window', async () => {
     const startMs = Date.now()
-    globalThis.fetch = vi.fn((_url, init) => {
-      return new Promise<Response>((_resolve, reject) => {
-        const signal = init?.signal as AbortSignal | undefined
-        if (signal) {
-          signal.addEventListener('abort', () => {
-            reject(new DOMException('The operation was aborted.', 'AbortError'))
-          })
-        }
-      })
-    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url, init) => {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal | undefined
+          if (signal) {
+            signal.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'))
+            })
+          }
+        })
+      }),
+    )
 
     await expect(
       putSelection({
@@ -116,9 +114,8 @@ describe('putSelection X-Redesigner-Ext-Id header', () => {
       }),
     ).rejects.toBeInstanceOf(DaemonRestError)
 
-    const elapsedMs = Date.now() - startMs
-    // Should have aborted well within 1s; the 50ms timeout is the upper bound.
-    expect(elapsedMs).toBeLessThan(1_000)
+    // 50ms timeout should have aborted well under a 1s ceiling.
+    expect(Date.now() - startMs).toBeLessThan(1_000)
   })
 })
 
@@ -128,32 +125,24 @@ describe('putSelection X-Redesigner-Ext-Id header', () => {
 
 describe('postExchange X-Redesigner-Ext-Id header', () => {
   test('sends X-Redesigner-Ext-Id when extId is supplied', async () => {
-    let capturedHeaders: Headers | undefined
-    globalThis.fetch = vi.fn(async (_url, init) => {
-      capturedHeaders = new Headers(init?.headers as HeadersInit)
-      return makeExchangeResponse()
-    })
+    const cap = stubFetchCapture(makeExchangeResponse)
     await postExchange({
       httpUrl: HTTP_URL,
       clientNonce: 'cn-val-0123456789',
       bootstrapToken: 'btok-abc',
       extId: 'abcdefghijklmnopabcdefghijklmnop',
     })
-    expect(capturedHeaders?.get('X-Redesigner-Ext-Id')).toBe('abcdefghijklmnopabcdefghijklmnop')
+    expect(cap.headers()?.get('X-Redesigner-Ext-Id')).toBe('abcdefghijklmnopabcdefghijklmnop')
   })
 
   test('omits X-Redesigner-Ext-Id when extId is undefined', async () => {
-    let capturedHeaders: Headers | undefined
-    globalThis.fetch = vi.fn(async (_url, init) => {
-      capturedHeaders = new Headers(init?.headers as HeadersInit)
-      return makeExchangeResponse()
-    })
+    const cap = stubFetchCapture(makeExchangeResponse)
     await postExchange({
       httpUrl: HTTP_URL,
       clientNonce: 'cn-val-0123456789',
       bootstrapToken: 'btok-abc',
     })
-    expect(capturedHeaders?.has('X-Redesigner-Ext-Id')).toBe(false)
+    expect(cap.headers()?.has('X-Redesigner-Ext-Id')).toBe(false)
   })
 })
 
@@ -163,29 +152,21 @@ describe('postExchange X-Redesigner-Ext-Id header', () => {
 
 describe('getHealth X-Redesigner-Ext-Id header', () => {
   test('sends X-Redesigner-Ext-Id when extId is supplied', async () => {
-    let capturedHeaders: Headers | undefined
-    globalThis.fetch = vi.fn(async (_url, init) => {
-      capturedHeaders = new Headers(init?.headers as HeadersInit)
-      return makeHealthResponse()
-    })
+    const cap = stubFetchCapture(makeHealthResponse)
     await getHealth({
       httpUrl: HTTP_URL,
       sessionToken: 'test-session',
       extId: 'abcdefghijklmnopabcdefghijklmnop',
     })
-    expect(capturedHeaders?.get('X-Redesigner-Ext-Id')).toBe('abcdefghijklmnopabcdefghijklmnop')
+    expect(cap.headers()?.get('X-Redesigner-Ext-Id')).toBe('abcdefghijklmnopabcdefghijklmnop')
   })
 
   test('omits X-Redesigner-Ext-Id when extId is undefined', async () => {
-    let capturedHeaders: Headers | undefined
-    globalThis.fetch = vi.fn(async (_url, init) => {
-      capturedHeaders = new Headers(init?.headers as HeadersInit)
-      return makeHealthResponse()
-    })
+    const cap = stubFetchCapture(makeHealthResponse)
     await getHealth({
       httpUrl: HTTP_URL,
       sessionToken: 'test-session',
     })
-    expect(capturedHeaders?.has('X-Redesigner-Ext-Id')).toBe(false)
+    expect(cap.headers()?.has('X-Redesigner-Ext-Id')).toBe(false)
   })
 })
