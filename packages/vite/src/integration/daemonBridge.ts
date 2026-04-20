@@ -63,6 +63,7 @@ interface Handoff {
   host: string
   port: number
   token: string
+  bootstrapToken: string
   projectRoot: string
   startedAt: number
 }
@@ -141,6 +142,39 @@ export class DaemonBridge {
       return null
     }
     return { port: parsed.port, serverVersion: parsed.serverVersion }
+  }
+
+  /**
+   * Returns the bootstrap token and HTTP base URL for the running daemon, or null
+   * if the bridge has not started, the handoff file is missing, or the file fails
+   * schema validation. Re-reads the handoff file on every call (no caching) so a
+   * daemon restart is reflected without recycling the Vite server.
+   */
+  readBootstrap(): { bootstrapToken: string; httpUrl: string } | null {
+    if (!this.handle || !this.handoffPath) return null
+    let raw: string
+    try {
+      raw = fs.readFileSync(this.handoffPath, 'utf8')
+    } catch {
+      return null
+    }
+    let parsed: Handoff
+    try {
+      parsed = JSON.parse(raw) as Handoff
+      if (
+        typeof parsed.bootstrapToken !== 'string' ||
+        typeof parsed.host !== 'string' ||
+        typeof parsed.port !== 'number'
+      ) {
+        return null
+      }
+    } catch {
+      return null
+    }
+    return {
+      bootstrapToken: parsed.bootstrapToken,
+      httpUrl: `http://${parsed.host}:${parsed.port}`,
+    }
   }
 
   async start(opts: DaemonBridgeOptions): Promise<void> {
