@@ -65,7 +65,14 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   readyPromise
-    .then(() => routeMessage(msg, sender, sendResponse, { panelPort, tabHandshakes, tabSessions }))
+    .then(() =>
+      routeMessage(msg, sender, sendResponse, {
+        panelPort,
+        tabHandshakes,
+        tabSessions,
+        extId: chrome.runtime.id,
+      }),
+    )
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err)
       sendResponse({ error: message })

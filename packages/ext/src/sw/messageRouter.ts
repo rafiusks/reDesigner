@@ -5,14 +5,20 @@
  * addListener registration — so the async handler body lives here.
  */
 
+import { ensureSession } from './ensureSession.js'
 import type { PanelPort } from './panelPort.js'
-import { postExchange } from './rest.js'
 
 export interface TabHandshake {
   wsUrl: string
   httpUrl: string
   bootstrapToken: string
   editor: string
+  /**
+   * Epoch-ms timestamp of when the register handler ran. Used to detect
+   * cold-start races (pick arriving <100ms after register). Must be
+   * Date.now() not performance.now() — SW wakes reset the perf origin.
+   */
+  registeredAtEpochMs: number
 }
 
 export interface TabSession {
@@ -24,26 +30,7 @@ export interface MessageRouterDeps {
   panelPort: PanelPort
   tabHandshakes: Map<number, TabHandshake>
   tabSessions: Map<number, TabSession>
-}
-
-const SESSION_REFRESH_LEAD_MS = 60_000
-
-async function ensureSession(
-  tabId: number,
-  hs: TabHandshake,
-  deps: MessageRouterDeps,
-): Promise<string> {
-  const cached = deps.tabSessions.get(tabId)
-  if (cached && cached.exp - Date.now() > SESSION_REFRESH_LEAD_MS) {
-    return cached.sessionToken
-  }
-  const res = await postExchange({
-    httpUrl: hs.httpUrl,
-    clientNonce: crypto.randomUUID(),
-    bootstrapToken: hs.bootstrapToken,
-  })
-  deps.tabSessions.set(tabId, { sessionToken: res.sessionToken, exp: res.exp })
-  return res.sessionToken
+  extId: string
 }
 
 type SendResponse = (response?: unknown) => void
@@ -83,6 +70,7 @@ export async function routeMessage(
           httpUrl: m.httpUrl,
           bootstrapToken: m.bootstrapToken,
           editor: m.editor,
+          registeredAtEpochMs: Date.now(),
         })
       }
       let origin: string | null = null
