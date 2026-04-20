@@ -124,6 +124,61 @@ jobs:
         shell: bash
         run: |
           ! git grep -En '\b(describe|it|test)\.(only|skip)\b' -- 'packages/*/test' || exit 1
+      - name: Fake-timer deny-list (production src only)
+        shell: bash
+        run: |
+          # Fake timers belong in test code, never in shipped src/. A stray
+          # vi.* call in packages/*/src/ would be a leak from test into prod.
+          # Fixtures excluded since golden outputs may replay timestamps as text.
+          # Tests (test/**) are NOT scanned — reconnect/backoff specs need them.
+          ! grep -rE 'vi\.(advanceTimersByTime|runAllTimers|setSystemTime)' \
+            --include='*.ts' --include='*.tsx' \
+            --exclude-dir=fixtures --exclude-dir=node_modules --exclude-dir=dist \
+            packages/core/src packages/vite/src packages/mcp/src packages/daemon/src packages/ext/src
+      - name: Size-limit — panel bundle budget
+        shell: bash
+        run: |
+          # Build the ext panel and assert the panel chunk stays under budget.
+          # 200KB raw (uncompressed) is the v0 budget; tighten as we grow.
+          pnpm --filter @redesigner/ext build >/dev/null
+          BUDGET_KB=200
+          DIST=packages/ext/dist
+          if [ ! -d "$DIST" ]; then
+            echo "::error::panel bundle dir $DIST missing after build"
+            exit 1
+          fi
+          # Pick the largest JS chunk that originated from the panel entry.
+          # CRXJS emits hashed filenames; match the panel entry by path prefix.
+          PANEL_CHUNK=$(find "$DIST" -type f -name '*.js' \
+            \( -path '*panel*' -o -path '*index*' \) \
+            -print0 | xargs -0 du -k 2>/dev/null | sort -n | tail -1 || true)
+          if [ -z "$PANEL_CHUNK" ]; then
+            echo "::warning::No panel chunk located under $DIST — skipping size-limit"
+            exit 0
+          fi
+          SIZE_KB=$(echo "$PANEL_CHUNK" | awk '{print $1}')
+          FILE=$(echo "$PANEL_CHUNK" | awk '{$1=""; print substr($0,2)}')
+          echo "panel bundle size: ${SIZE_KB}KB  ($FILE)  budget=${BUDGET_KB}KB"
+          if [ "$SIZE_KB" -gt "$BUDGET_KB" ]; then
+            echo "::error::panel bundle ${SIZE_KB}KB exceeds ${BUDGET_KB}KB budget"
+            exit 1
+          fi
+      - name: leak-baseline.json staleness (6 months)
+        shell: bash
+        run: |
+          # Cross-platform mtime via Node (stat -c on Linux vs -f on macOS
+          # diverges; Node is the common-denominator we already have on PATH).
+          node -e "
+            const fs = require('node:fs');
+            const p = 'packages/ext/leak-baseline.json';
+            const ageMs = Date.now() - fs.statSync(p).mtimeMs;
+            const ageDays = ageMs / 86400000;
+            console.log('leak-baseline age:', ageDays.toFixed(1), 'days');
+            if (ageDays > 180) {
+              console.error('::error::leak-baseline.json is', ageDays.toFixed(1), 'days old — refresh nightly harness');
+              process.exit(1);
+            }
+          "
       - name: Per-directory non-empty assertion
         shell: bash
         run: |
