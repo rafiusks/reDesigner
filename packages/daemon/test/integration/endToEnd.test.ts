@@ -162,32 +162,39 @@ describe('daemon endToEnd — fork + ready + REST + WS + graceful shutdown', () 
       ws.on('message', onMsg)
     })
 
-    // ----- 5. POST /selection with a valid ComponentHandle.
-    const handle = {
-      id: 'sel-1',
-      componentName: 'App',
-      filePath: 'src/App.tsx',
-      lineRange: [1, 10] as [number, number],
-      domPath: 'html>body>div',
-      parentChain: [],
-      timestamp: Date.now(),
+    // ----- 5. PUT /tabs/42/selection with a valid SelectionPutBody.
+    const TAB_ID = 42
+    const putBody = {
+      nodes: [
+        {
+          id: 'sel-1',
+          componentName: 'App',
+          filePath: 'src/App.tsx',
+          lineRange: [1, 10] as [number, number],
+          domPath: 'html>body>div',
+          parentChain: [],
+          timestamp: Date.now(),
+        },
+      ],
+      clientId: '550e8400-e29b-41d4-a716-446655440000',
+      meta: { source: 'dev' as const },
     }
-    const postRes = await fetch(`${h.urlPrefix}/selection`, {
-      method: 'POST',
+    const postRes = await fetch(`${h.urlPrefix}/tabs/${TAB_ID}/selection`, {
+      method: 'PUT',
       headers: {
         Authorization: h.authHeader,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(handle),
+      body: JSON.stringify(putBody),
       redirect: 'error',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     expect(postRes.status).toBe(200)
-    const postBody = (await postRes.json()) as { kind: string; current: { id: string } | null }
-    expect(postBody.kind).toBe('new')
-    expect(postBody.current?.id).toBe('sel-1')
+    const putResBody = (await postRes.json()) as { selectionSeq: number; acceptedAt: number }
+    expect(typeof putResBody.selectionSeq).toBe('number')
+    expect(putResBody.selectionSeq).toBeGreaterThanOrEqual(1)
 
-    // ----- 6. GET /selection returns the posted handle.
+    // ----- 6. GET /selection returns the PUT handle.
     const getRes = await fetch(`${h.urlPrefix}/selection`, {
       headers: { Authorization: h.authHeader },
       redirect: 'error',

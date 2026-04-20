@@ -54,9 +54,9 @@
  *     (scenario 5, boundary loop) pace ≥220ms between reconnects to stay
  *     inside the budget.
  *
- *   - Selection POST rate-limit: 120/s burst 30. Publishing RING_CAP+1 = 1025
- *     `selection.updated` frames via POST /selection takes ≥8s minimum after
- *     the burst is consumed. Integration test budget per file: 30s.
+ *   - Selection PUT rate-limit: 120/s burst 30. Publishing RING_CAP+1 = 1025
+ *     `selection.updated` frames via PUT /tabs/{tabId}/selection takes ≥8s minimum
+ *     after the burst is consumed. Integration test budget per file: 30s.
  * ---------------------------------------------------------------------------
  */
 
@@ -238,38 +238,49 @@ function awaitOpen(ws: WebSocket, ms: number): Promise<void> {
   })
 }
 
+// Fixed tab ID used for all selection publishes in resync tests.
+const RESYNC_TAB_ID = 1
+
 /**
- * POST /selection with a valid ComponentHandle. Used to drive `selection.updated`
- * broadcasts and advance currentSeq on the daemon.
+ * PUT /tabs/{tabId}/selection with a valid SelectionPutBody. Used to drive
+ * `selection.updated` broadcasts and advance currentSeq on the daemon.
  */
 async function postSelection(h: DaemonHarness, id: string): Promise<void> {
-  const handle: ComponentHandle = {
-    id,
-    componentName: 'App',
-    filePath: 'src/App.tsx',
-    lineRange: [1, 10],
-    domPath: 'html>body>div',
-    parentChain: [],
-    timestamp: Date.now(),
+  const body = {
+    nodes: [
+      {
+        id,
+        componentName: 'App',
+        filePath: 'src/App.tsx',
+        lineRange: [1, 10] as [number, number],
+        domPath: 'html>body>div',
+        parentChain: [] as string[],
+        timestamp: Date.now(),
+      } satisfies ComponentHandle,
+    ],
+    clientId: '550e8400-e29b-41d4-a716-446655440000',
+    meta: { source: 'dev' as const },
   }
-  const res = await fetch(`${h.urlPrefix}/selection`, {
-    method: 'POST',
+  const res = await fetch(`${h.urlPrefix}/tabs/${RESYNC_TAB_ID}/selection`, {
+    method: 'PUT',
     headers: { Authorization: h.authHeader, 'Content-Type': 'application/json' },
-    body: JSON.stringify(handle),
+    body: JSON.stringify(body),
     redirect: 'error',
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
   if (res.status !== 200) {
-    throw new Error(`POST /selection → ${res.status}; body=${await res.text()}`)
+    throw new Error(
+      `PUT /tabs/${RESYNC_TAB_ID}/selection → ${res.status}; body=${await res.text()}`,
+    )
   }
 }
 
 /**
- * Drive n /selection POSTs paced to stay inside the 120/s + burst-30 rate
- * limit. Returns after all succeeded. Tolerates 429 by retrying with backoff.
+ * Drive n /tabs/{tabId}/selection PUTs paced to stay inside the 120/s + burst-30
+ * rate limit. Returns after all succeeded. Tolerates 429 by retrying with backoff.
  */
 async function publishSelections(h: DaemonHarness, count: number): Promise<void> {
-  // 120/s after the burst. Pace at ~120/s = ~8.3ms between POSTs. Add safety
+  // 120/s after the burst. Pace at ~120/s = ~8.3ms between PUTs. Add safety
   // margin: 10ms. Don't send concurrently — easier to guarantee in-order.
   const DELAY_MS = 9
   for (let i = 0; i < count; i++) {

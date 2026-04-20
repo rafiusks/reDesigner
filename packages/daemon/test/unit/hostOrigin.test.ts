@@ -487,9 +487,22 @@ describe('no 3xx from any HTTP route — integration', () => {
     { method: 'GET', path: '/selection/recent' },
     { method: 'GET', path: '/manifest' },
     {
-      method: 'POST',
-      path: '/selection',
-      body: JSON.stringify({ selector: 'button', label: 'B' }),
+      method: 'PUT',
+      path: '/tabs/42/selection',
+      body: JSON.stringify({
+        nodes: [
+          {
+            id: 'test-1',
+            componentName: 'App',
+            filePath: 'src/App.tsx',
+            lineRange: [1, 10],
+            domPath: 'div',
+            parentChain: [],
+            timestamp: 0,
+          },
+        ],
+        clientId: '550e8400-e29b-41d4-a716-446655440000',
+      }),
     },
     {
       method: 'POST',
@@ -502,9 +515,13 @@ describe('no 3xx from any HTTP route — integration', () => {
       body: JSON.stringify({ extensionId: 'x', requestId: 'r', selector: 'div' }),
     },
     { method: 'POST', path: '/shutdown' },
-    // Wrong methods that hit 405 (not 3xx)
+    // Wrong methods that hit 405 or 410 (not 3xx)
     { method: 'POST', path: '/health' },
+    // Legacy /selection — 410 Gone (not 3xx)
+    { method: 'POST', path: '/selection' },
     { method: 'DELETE', path: '/selection' },
+    // Wrong method on tab-scoped path → 405 (not 3xx)
+    { method: 'POST', path: '/tabs/42/selection' },
     // Unknown route → 404 (not 3xx)
     { method: 'GET', path: '/v1/browser/unknown' },
     { method: 'GET', path: '/nonexistent' },
