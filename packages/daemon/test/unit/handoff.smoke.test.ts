@@ -15,6 +15,7 @@ describe('handoff smoke', () => {
       pid: 123,
       port: 54321,
       token: 'a'.repeat(43),
+      bootstrapToken: 'b'.repeat(43),
       projectRoot: '/tmp',
     })
     expect(HandoffSchema.safeParse(h).success).toBe(true)

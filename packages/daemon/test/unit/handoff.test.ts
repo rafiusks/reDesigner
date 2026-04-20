@@ -39,6 +39,7 @@ function makeHandoff(overrides: Partial<Handoff> = {}): Handoff {
     host: '127.0.0.1',
     port: 54321,
     token: 'a'.repeat(43),
+    bootstrapToken: 'b'.repeat(43),
     projectRoot: '/tmp',
     startedAt: Date.now(),
     ...overrides,
@@ -548,6 +549,7 @@ describe('buildHandoff', () => {
       pid: process.pid,
       port: 9999,
       token: 'x'.repeat(43),
+      bootstrapToken: 'y'.repeat(43),
       projectRoot: testBase,
     })
     expect(HandoffSchema.safeParse(h).success).toBe(true)
@@ -559,6 +561,7 @@ describe('buildHandoff', () => {
       pid: process.pid,
       port: 9999,
       token: 'x'.repeat(43),
+      bootstrapToken: 'y'.repeat(43),
       projectRoot: testBase,
     })
     expect(h.instanceId).toMatch(
@@ -573,6 +576,7 @@ describe('buildHandoff', () => {
       pid: process.pid,
       port: 9999,
       token: 'x'.repeat(43),
+      bootstrapToken: 'y'.repeat(43),
       projectRoot: testBase,
       instanceId: id,
     })
@@ -585,6 +589,7 @@ describe('buildHandoff', () => {
       pid: process.pid,
       port: 9999,
       token: 'x'.repeat(43),
+      bootstrapToken: 'y'.repeat(43),
       projectRoot: testBase,
     })
     expect(h.host).toBe('127.0.0.1')
@@ -597,6 +602,7 @@ describe('buildHandoff', () => {
       pid: process.pid,
       port: 9999,
       token: 'x'.repeat(43),
+      bootstrapToken: 'y'.repeat(43),
       projectRoot: testBase,
     })
     const after = Date.now()
@@ -621,6 +627,16 @@ describe('HandoffSchema', () => {
 
   it('rejects token longer than 128 chars', () => {
     const h = makeHandoff({ token: 'a'.repeat(129) })
+    expect(HandoffSchema.safeParse(h).success).toBe(false)
+  })
+
+  it('rejects bootstrapToken shorter than 32 chars', () => {
+    const h = makeHandoff({ bootstrapToken: 'short' })
+    expect(HandoffSchema.safeParse(h).success).toBe(false)
+  })
+
+  it('rejects bootstrapToken longer than 128 chars', () => {
+    const h = makeHandoff({ bootstrapToken: 'b'.repeat(129) })
     expect(HandoffSchema.safeParse(h).success).toBe(false)
   })
 

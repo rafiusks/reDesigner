@@ -360,6 +360,7 @@ describe('daemon lifecycle — fresh start, disconnect, shutdown, SIGTERM, recla
       pid: deadPid,
       port: 65432,
       token: 'x'.repeat(32),
+      bootstrapToken: 'y'.repeat(32),
       projectRoot: realProjectRoot,
     })
     const { fd } = writeHandoff(handoffPath, stale)

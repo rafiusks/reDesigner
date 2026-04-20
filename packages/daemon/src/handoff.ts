@@ -12,6 +12,7 @@ export const HandoffSchema = z
     host: z.literal('127.0.0.1'),
     port: z.number().int().min(1).max(65535),
     token: z.string().min(32).max(128),
+    bootstrapToken: z.string().min(32).max(128),
     projectRoot: z.string().min(1),
     startedAt: z.number().int().nonnegative(),
   })
@@ -77,6 +78,7 @@ export function buildHandoff(opts: {
   pid: number
   port: number
   token: string
+  bootstrapToken: string
   projectRoot: string
   instanceId?: string
 }): Handoff {
@@ -87,6 +89,7 @@ export function buildHandoff(opts: {
     host: '127.0.0.1',
     port: opts.port,
     token: opts.token,
+    bootstrapToken: opts.bootstrapToken,
     projectRoot: opts.projectRoot,
     startedAt: Date.now(),
   }

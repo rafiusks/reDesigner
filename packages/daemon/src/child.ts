@@ -70,8 +70,9 @@ async function main(): Promise<void> {
     logger,
   )
 
-  // Step 5: token + instanceId.
+  // Step 5: token + bootstrapToken + instanceId.
   const token = crypto.randomBytes(32).toString('base64url')
+  const bootstrapToken = crypto.randomBytes(32).toString('base64url')
   const instanceId = crypto.randomUUID()
 
   // Step 6: discover ephemeral port; assert strict loopback + integer port.
@@ -158,6 +159,7 @@ async function main(): Promise<void> {
     pid: process.pid,
     port,
     token,
+    bootstrapToken,
     projectRoot,
     instanceId,
   })
